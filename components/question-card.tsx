@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Comment, addComment, getComments } from "@/lib/comments"
-import { deletePost, getSavedPosts, getVoteForPost, isPostSaved, recordVote, removeVote, savePost, unsavePost, updatePost, updateVote } from "@/lib/posts"
+import { deletePost, getSavedPosts, getVoteForPost, isPostSaved, recordVote, removeVote, savePost, unsavePost, updatePost, updatePostStatus, updateVote } from "@/lib/posts"
 import MonacoEditor from '@monaco-editor/react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Bookmark, BookmarkCheck, ChevronDown, ChevronUp, Copy } from "lucide-react"
@@ -27,6 +27,10 @@ interface QuestionCardProps {
   }
   answer?: string
   authorId: string
+  active?: boolean
+  type?: 'post' | 'doubt'
+  onDelete?: () => Promise<void>
+  onUnsave?: () => Promise<void>
 }
 
 export default function QuestionCard({
@@ -41,6 +45,10 @@ export default function QuestionCard({
   user,
   answer,
   authorId,
+  active = true,
+  type,
+  onDelete,
+  onUnsave,
 }: QuestionCardProps) {
   const [showCode, setShowCode] = useState(true)
   const [showAnswer, setShowAnswer] = useState(true)
@@ -69,6 +77,13 @@ export default function QuestionCard({
   // For confetti size/position
   const [confettiDims] = useState<{width: number, height: number}>({width: 350, height: 200});
   const upvoteRef = useRef<HTMLButtonElement>(null)
+
+  const isAuthor = currentUser && currentUser.uid === authorId;
+
+  const [isPostActive, setIsPostActive] = useState(active);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  const editorRef = useRef(null)
 
   useEffect(() => {
     loadComments()
@@ -267,6 +282,10 @@ export default function QuestionCard({
 
   // Edit handlers
   const handleEditClick = () => {
+    // Allow edit for author of any post type, or any logged-in user for doubts
+    if (type === 'post' && !isAuthor) return;
+    if (type === 'doubt' && !currentUser) return; // Only logged-in users can edit doubts
+
     setIsEditing(true);
     setEditedTitle(title);
     setEditedCode(code);
@@ -275,9 +294,11 @@ export default function QuestionCard({
   };
 
   const handleSaveEdit = async () => {
-    if (!currentUser) return;
+    // Allow save for author of any post type, or any logged-in user for doubts
+    if (type === 'post' && !isAuthor) return; // Only author can save edits for posts
+    if (type === 'doubt' && !currentUser) return; // Only logged-in users can save edits for doubts
 
-    setIsSubmitting(true); // Reuse submitting state for edit save
+    setIsSubmitting(true); // Reuse submitting state for edit saving
     try {
       const tagsArray = editedTags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
 
@@ -288,16 +309,22 @@ export default function QuestionCard({
         tags: tagsArray.length > 0 ? tagsArray : undefined,
       };
 
-      await updatePost(id, updatedData); // Use the new updatePost function
+      await updatePost(id, updatedData);
 
       // Optionally, update local state or refetch post data
       // For simplicity, we can just set isEditing to false and rely on a page refresh or parent component state update
       setIsEditing(false);
+      // Hit refresh after save changes
+      window.location.reload();
       // Consider adding feedback to the user that the save was successful
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving edit:", error);
-      // Provide user feedback on error
+      let errorMessage = "Failed to save changes.";
+      if (error.code === 'not-found') {
+        errorMessage = "This post may have been deleted. Please refresh the page.";
+      }
+      alert(errorMessage); // Provide user feedback on error
     } finally {
       setIsSubmitting(false);
     }
@@ -308,9 +335,25 @@ export default function QuestionCard({
     // Optionally, revert edited states to original post values if needed
   };
 
+  const handleToggleActive = async () => {
+    if (!currentUser || !isAuthor) return;
+    
+    setIsUpdatingStatus(true);
+    try {
+      const newStatus = !isPostActive;
+      await updatePostStatus(id, newStatus);
+      setIsPostActive(newStatus);
+    } catch (error) {
+      console.error("Error updating post status:", error);
+      // Optionally show an error message to the user
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
   return (
     <motion.div
-      className="rounded-3xl border-4 border-black bg-[#fffbe7] shadow-[0_6px_0_#222] transition-transform duration-200 hover:scale-105 hover:-rotate-1 mb-4 font-comic will-change-transform"
+      className={`rounded-3xl border-4 border-black ${type === 'doubt' ? 'bg-blue-50' : 'bg-[#fffbe7]'} shadow-[0_6px_0_#222] transition-transform duration-200 hover:scale-105 hover:-rotate-1 mb-4 font-comic will-change-transform`}
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, type: 'spring' }}
@@ -414,8 +457,10 @@ export default function QuestionCard({
               )}
             </button>
           )}
-          {currentUser && currentUser.uid === authorId && (
+          {/* Edit and Delete buttons (visible based on type and authorship) */}
+          {(isAuthor || (type === 'doubt' && currentUser)) && !isEditing && (
             <div className="flex items-center gap-2">
+              {/* Edit Button */}
               <button
                 onClick={handleEditClick}
                 className="flex items-center justify-center h-8 w-8 rounded-md text-gray-500 hover:bg-gray-100"
@@ -423,24 +468,39 @@ export default function QuestionCard({
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.85 0 1 0 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
               </button>
-              <button
-                onClick={async () => {
-                  if (confirm('Are you sure you want to delete this post?')) {
-                    try {
-                      await deletePost(id);
-                      window.location.reload();
-                    } catch (error) {
-                      console.error("Error deleting post:", error);
-                      alert("Failed to delete post.");
+              {/* Delete Button (only for author) */}
+              {isAuthor && (
+                <button
+                  onClick={async () => {
+                    if (confirm('Are you sure you want to delete this post?')) {
+                      try {
+                        await deletePost(id);
+                        // Optionally update UI or refetch posts after deletion
+                        // For now, we might rely on a page refresh or parent component handling
+                        window.location.reload(); // Simple refresh after delete
+                      } catch (error) {
+                        console.error("Error deleting post:", error);
+                        alert("Failed to delete post.");
+                      }
                     }
-                  }
-                }}
-                className="flex items-center justify-center h-8 w-8 rounded-md text-red-500 hover:bg-red-100"
-                title="Delete Post"
-              >
-                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><line x1="18" x2="12" y1="9" y2="15"/><line x1="12" x2="18" y1="9" y2="15"/></svg>
-              </button>
+                  }}
+                  className="flex items-center justify-center h-8 w-8 rounded-md text-red-500 hover:bg-red-100"
+                  title="Delete Post"
+                >
+                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><line x1="18" x2="12" y1="9" y2="15"/><line x1="12" x2="18" y1="9" y2="15"/></svg>
+                </button>
+              )}
             </div>
+          )}
+          {isAuthor && (
+            <button
+              onClick={handleToggleActive}
+              disabled={isUpdatingStatus}
+              className={`flex items-center justify-center h-8 w-auto px-2 rounded-md text-sm ${isPostActive ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'} hover:${isPostActive ? 'bg-green-300' : 'bg-red-300'}`}
+              title={isPostActive ? "Mark as Inactive" : "Mark as Active"}
+            >
+              {isUpdatingStatus ? 'Updating...' : (isPostActive ? 'Active' : 'Inactive')}
+            </button>
           )}
         </div>
       </div>

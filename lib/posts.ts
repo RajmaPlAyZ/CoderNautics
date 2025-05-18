@@ -14,6 +14,8 @@ export interface Post {
   votes: number; // Ensure votes is included
   downvotes: number; // Ensure downvotes is included
   user?: { username: string; avatar_url: string | null }; // Add user info if stored directly or fetched separately
+  active: boolean; // Add active status field
+  type?: 'post' | 'doubt'; // Add type field
 }
 
 export interface SavedPost {
@@ -100,6 +102,7 @@ export async function getPostsByUserId(userId: string): Promise<Post[]> {
       code: postData.code || '',
       answer: postData.answer || '',
       tags: postData.tags || [],
+      type: postData.type || 'post',
     } as Post;
   }));
 
@@ -107,26 +110,53 @@ export async function getPostsByUserId(userId: string): Promise<Post[]> {
 }
 
 export async function addPost(postData: { title: string; code?: string; answer?: string; tags?: string[] }, authorId: string): Promise<Post> {
-  const postsRef = collection(firestore, 'questions'); // Assuming posts are stored in 'questions'
+  const postsRef = collection(firestore, 'questions');
   const newPostData = {
     ...postData,
     authorId,
-    date: new Date(), // Add current date
-    votes: 0, // Initialize votes
-    downvotes: 0, // Initialize downvotes
+    date: new Date(),
+    votes: 0,
+    downvotes: 0,
+    active: true,
+    type: 'post',
   };
 
   const docRef = await addDoc(postsRef, newPostData);
+  await updateUserScore(authorId, 10);
   return {
     id: docRef.id,
     ...newPostData,
-    date: newPostData.date, // Ensure date is included in the returned Post
+    date: newPostData.date,
+    type: 'post',
+  } as Post;
+}
+
+export async function addDoubt(doubtData: { title: string; description: string; tags?: string[] }, authorId: string): Promise<Post> {
+  const doubtsRef = collection(firestore, 'questions'); // Store doubts in the same collection for simplicity
+  const newDoubtData = {
+    title: doubtData.title,
+    answer: doubtData.description, // Use 'answer' field for description/initial question
+    tags: doubtData.tags,
+    authorId,
+    date: new Date(),
+    votes: 0,
+    downvotes: 0,
+    active: true, // Doubts are active by default
+    type: 'doubt', // Explicitly set type for doubts
+  };
+
+  const docRef = await addDoc(doubtsRef, newDoubtData);
+  await updateUserScore(authorId, 10);
+  return {
+    id: docRef.id,
+    ...newDoubtData,
+    date: newDoubtData.date,
+    type: 'doubt',
   } as Post;
 }
 
 export async function getAllPosts(): Promise<Post[]> {
   const postsRef = collection(firestore, 'questions');
-  // Optionally, add ordering here, e.g., orderBy('date', 'desc')
   const q = query(postsRef);
 
   const querySnapshot = await getDocs(q);
@@ -142,7 +172,7 @@ export async function getAllPosts(): Promise<Post[]> {
       if (profileSnap.exists()) {
         const profileData = profileSnap.data();
         author = {
-          username: profileData.username || profileData.email, // Assuming username or email is available
+          username: profileData.username || profileData.email,
           avatar_url: profileData.avatar_url || null,
         };
       }
@@ -151,8 +181,10 @@ export async function getAllPosts(): Promise<Post[]> {
     return {
       id: docSnapshot.id,
       ...postData,
-      date: postData.date?.toDate() || new Date(postData.date), // Handle potential different date formats
-      user: author, // Include author information
+      date: postData.date?.toDate() || new Date(postData.date),
+      user: author,
+      active: postData.active ?? true,
+      type: postData.type || 'post',
     } as Post;
   }));
 
@@ -167,7 +199,6 @@ export async function getPostById(postId: string): Promise<Post | null> {
     const postData = postSnap.data();
     let author = undefined;
 
-    // Fetch author profile if authorId exists
     if (postData.authorId) {
       const profileRef = doc(firestore, "profiles", postData.authorId);
       const profileSnap = await getDoc(profileRef);
@@ -183,11 +214,12 @@ export async function getPostById(postId: string): Promise<Post | null> {
     return {
       id: postSnap.id,
       ...postData,
-      date: postData.date?.toDate() || new Date(postData.date), // Handle potential different date formats
-      user: author, // Include author information
+      date: postData.date?.toDate() || new Date(postData.date),
+      user: author,
+      type: postData.type || 'post',
     } as Post;
   } else {
-    return null; // Post not found
+    return null;
   }
 }
 
@@ -236,6 +268,13 @@ export async function recordVote(userId: string, postId: string, type: 'upvote' 
 
   if (type === 'upvote') {
     batch.update(postRef, { votes: increment(1) });
+    const postSnapshot = await getDoc(postRef);
+    if (postSnapshot.exists()) {
+      const postAuthorId = postSnapshot.data().authorId;
+      if (postAuthorId) {
+        batch.update(doc(firestore, "profiles", postAuthorId), { score: increment(1) });
+      }
+    }
   } else if (type === 'downvote') {
     batch.update(postRef, { votes: increment(-1) });
   }
@@ -251,10 +290,24 @@ export async function updateVote(voteId: string, postId: string, newType: 'upvot
   batch.update(voteRef, { type: newType });
 
   if (oldType === 'upvote' && newType === 'downvote') {
-    batch.update(postRef, { votes: increment(-2) }); // Decrement upvote, then decrement for downvote
+    batch.update(postRef, { votes: increment(-2) });
+    const postSnapshot = await getDoc(postRef);
+    if (postSnapshot.exists()) {
+      const postAuthorId = postSnapshot.data().authorId;
+      if (postAuthorId) {
+        batch.update(doc(firestore, "profiles", postAuthorId), { score: increment(-2) });
+      }
+    }
   } else if (oldType === 'downvote' && newType === 'upvote') {
-    batch.update(postRef, { votes: increment(2) }); // Increment downvote, then increment for upvote
-  } // If oldType is same as newType, only the vote document is updated, post votes are not changed.
+    batch.update(postRef, { votes: increment(2) });
+    const postSnapshot = await getDoc(postRef);
+    if (postSnapshot.exists()) {
+      const postAuthorId = postSnapshot.data().authorId;
+      if (postAuthorId) {
+        batch.update(doc(firestore, "profiles", postAuthorId), { score: increment(2) });
+      }
+    }
+  }
 
   await batch.commit();
 }
@@ -268,8 +321,22 @@ export async function removeVote(voteId: string, postId: string, type: 'upvote' 
 
     if (type === 'upvote') {
         batch.update(postRef, { votes: increment(-1) });
+        const postSnapshot = await getDoc(postRef);
+        if (postSnapshot.exists()) {
+          const postAuthorId = postSnapshot.data().authorId;
+          if (postAuthorId) {
+            batch.update(doc(firestore, "profiles", postAuthorId), { score: increment(-1) });
+          }
+        }
     } else if (type === 'downvote') {
         batch.update(postRef, { votes: increment(1) });
+        const postSnapshot = await getDoc(postRef);
+        if (postSnapshot.exists()) {
+          const postAuthorId = postSnapshot.data().authorId;
+          if (postAuthorId) {
+            batch.update(doc(firestore, "profiles", postAuthorId), { score: increment(1) });
+          }
+        }
     }
 
     await batch.commit();
@@ -284,4 +351,26 @@ export async function deletePost(postId: string): Promise<void> {
 export async function updatePost(postId: string, updatedData: { title?: string; code?: string; answer?: string; tags?: string[] }): Promise<void> {
   const postRef = doc(firestore, 'questions', postId);
   await updateDoc(postRef, updatedData);
+}
+
+export async function updatePostStatus(postId: string, active: boolean): Promise<void> {
+  const postRef = doc(firestore, 'questions', postId);
+  await updateDoc(postRef, {
+    active: active
+  });
+}
+
+export async function addAnswerToDoubt(doubtId: string, answer: string, userId: string): Promise<void> {
+  const doubtRef = doc(firestore, 'questions', doubtId);
+  await updateDoc(doubtRef, {
+    answer: answer,
+  });
+  await updateUserScore(userId, 15);
+}
+
+export async function updateUserScore(userId: string, points: number): Promise<void> {
+  const profileRef = doc(firestore, "profiles", userId);
+  await updateDoc(profileRef, {
+    score: increment(points)
+  });
 } 

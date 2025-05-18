@@ -1,13 +1,13 @@
 "use client";
 import {
-    ChevronLeft,
-    ChevronRight,
-    Home,
-    LogIn,
-    LogOut,
-    Shield,
-    User,
-    UserPlus,
+  ChevronLeft,
+  ChevronRight,
+  Home,
+  LogIn,
+  LogOut,
+  Shield,
+  User,
+  UserPlus,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';

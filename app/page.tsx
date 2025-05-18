@@ -278,7 +278,7 @@ export default function HomePage() {
 
       <footer className="border-t bg-white py-6 px-4 sm:px-6 lg:px-8">
         <div className="container mx-auto px-4 text-center text-sm text-gray-600">
-          <p>© 2025 CodeQ&A. All rights reserved.</p>
+          <p>© 2025 CoderNautics. All rights reserved.</p>
         </div>
       </footer>
     </div>

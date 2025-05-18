@@ -1,0 +1,663 @@
+"use client"
+
+import { useAuth } from "@/components/AuthProvider"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import { Comment, addComment, getComments } from "@/lib/comments"
+import { deletePost, getSavedPosts, getVoteForPost, isPostSaved, recordVote, removeVote, savePost, unsavePost, updatePost, updateVote } from "@/lib/posts"
+import MonacoEditor from '@monaco-editor/react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { Bookmark, BookmarkCheck, ChevronDown, ChevronUp, Copy } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+
+interface QuestionCardProps {
+  id: string
+  title: string
+  tags: string[]
+  votes: number
+  downvotes: number
+  date: string
+  codeVisible?: boolean
+  code?: string
+  user?: {
+    username: string
+    avatar_url: string | null
+    email?: string
+  }
+  answer?: string
+  authorId: string
+}
+
+export default function QuestionCard({
+  id,
+  title,
+  tags,
+  votes,
+  downvotes,
+  date,
+  codeVisible = false,
+  code = "",
+  user,
+  answer,
+  authorId,
+}: QuestionCardProps) {
+  const [showCode, setShowCode] = useState(true)
+  const [showAnswer, setShowAnswer] = useState(true)
+  const [comment, setComment] = useState("")
+  const [localVotes, setLocalVotes] = useState(votes)
+  const [voteAnimation, setVoteAnimation] = useState(false)
+  const [showConfetti, setShowConfetti] = useState(false)
+  const [showCry, setShowCry] = useState(false)
+  const [comments, setComments] = useState<Comment[]>([])
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const { user: currentUser } = useAuth()
+  const [isSaved, setIsSaved] = useState(false)
+  const [savedPostId, setSavedPostId] = useState<string | null>(null)
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
+
+  const [userVote, setUserVote] = useState<"upvote" | "downvote" | null>(null);
+  const [userVoteId, setUserVoteId] = useState<string | null>(null);
+
+  // Edit state
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedTitle, setEditedTitle] = useState(title);
+  const [editedCode, setEditedCode] = useState(code);
+  const [editedAnswer, setEditedAnswer] = useState(answer);
+  const [editedTags, setEditedTags] = useState(tags.join(', ')); // Convert tags array to string for editing
+
+  // For confetti size/position
+  const [confettiDims] = useState<{width: number, height: number}>({width: 350, height: 200});
+  const upvoteRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    loadComments()
+    if (currentUser) {
+      checkIfSaved()
+      checkUserVote();
+    }
+  }, [id, currentUser])
+
+  const loadComments = async () => {
+    try {
+      const fetchedComments = await getComments(id)
+      setComments(fetchedComments)
+    } catch (error) {
+      console.error("Error loading comments:", error)
+    }
+  }
+
+  const checkUserVote = async () => {
+    if (!currentUser) return;
+    try {
+      const vote = await getVoteForPost(currentUser.uid, id);
+      if (vote) {
+        setUserVote(vote.type);
+        setUserVoteId(vote.id || null);
+      } else {
+        setUserVote(null);
+        setUserVoteId(null);
+      }
+    } catch (error) {
+      console.error("Error checking user vote:", error);
+    }
+  };
+
+  const getAuthorName = () => {
+    if (currentUser?.displayName) return currentUser.displayName;
+    if (currentUser?.username) return currentUser.username;
+    if (currentUser?.uid) return currentUser.uid.slice(0, 8);
+    return 'Anonymous';
+  }
+
+  const handleSubmitComment = async () => {
+    if (!currentUser || !comment.trim()) return
+
+    setIsSubmitting(true)
+    try {
+      const newComment = await addComment(
+        id,
+        comment.trim(),
+        currentUser.uid,
+        getAuthorName()
+      )
+      setComments([newComment, ...comments])
+      setComment("")
+    } catch (error) {
+      console.error("Error adding comment:", error)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleUpvote = async () => {
+    if (!currentUser) return; // Prevent voting if not logged in
+
+    try {
+      const existingVote = userVote;
+      const existingVoteId = userVoteId;
+
+      if (existingVote === "upvote") {
+        // User is trying to upvote again, remove the upvote
+        setLocalVotes((v) => v - 1);
+        setUserVote(null);
+        setUserVoteId(null);
+        await removeVote(existingVoteId!, id, "upvote");
+      } else if (existingVote === "downvote") {
+        // User is changing downvote to upvote
+        setLocalVotes((v) => v + 2); // Remove downvote (-1) + add upvote (+1) = +2
+        setUserVote("upvote");
+        await updateVote(existingVoteId!, id, "upvote", "downvote");
+      } else {
+        // User has not voted, record upvote
+        setLocalVotes((v) => v + 1);
+        setUserVote("upvote");
+        // We don't set userVoteId here, will be fetched on next load or could be returned by recordVote
+        await recordVote(currentUser.uid, id, "upvote");
+      }
+
+      // Trigger animation regardless of the vote change type for visual feedback
+      setVoteAnimation(true);
+      setShowConfetti(true);
+      setTimeout(() => setVoteAnimation(false), 300);
+      setTimeout(() => setShowConfetti(false), 1000);
+
+      // Re-fetch vote status to get the correct userVoteId if a new vote was recorded
+      checkUserVote();
+
+    } catch (error) {
+      console.error("Error handling upvote:", error);
+      // Basic error handling: could revert local state here if needed
+    }
+  };
+
+  const handleDownvote = async () => {
+    if (!currentUser) return; // Prevent voting if not logged in
+
+    try {
+      const existingVote = userVote;
+      const existingVoteId = userVoteId;
+
+      if (existingVote === "downvote") {
+        // User is trying to downvote again, remove the downvote
+        setLocalVotes((v) => v + 1);
+        setUserVote(null);
+        setUserVoteId(null);
+        await removeVote(existingVoteId!, id, "downvote");
+      } else if (existingVote === "upvote") {
+        // User is changing upvote to downvote
+        setLocalVotes((v) => v - 2); // Remove upvote (+1) + add downvote (-1) = -2
+        setUserVote("downvote");
+        await updateVote(existingVoteId!, id, "downvote", "upvote");
+      } else {
+        // User has not voted, record downvote
+        setLocalVotes((v) => v - 1);
+        setUserVote("downvote");
+        // We don't set userVoteId here, will be fetched on next load or could be returned by recordVote
+        await recordVote(currentUser.uid, id, "downvote");
+      }
+
+      // Trigger animation regardless of the vote change type for visual feedback
+      setVoteAnimation(true);
+      setShowCry(true);
+      setTimeout(() => setVoteAnimation(false), 300);
+      setTimeout(() => setShowCry(false), 1200);
+
+      // Re-fetch vote status to get the correct userVoteId if a new vote was recorded
+      checkUserVote();
+
+    } catch (error) {
+      console.error("Error handling downvote:", error);
+      // Basic error handling: could revert local state here if needed
+    }
+  };
+
+  const checkIfSaved = async () => {
+    if (!currentUser) return
+    try {
+      const saved = await isPostSaved(currentUser.uid, id)
+      setIsSaved(saved)
+    } catch (error) {
+      console.error("Error checking if post is saved:", error)
+    }
+  }
+
+  const handleSavePost = async () => {
+    if (!currentUser) return
+
+    try {
+      if (isSaved) {
+        if (savedPostId) {
+          await unsavePost(savedPostId)
+          setIsSaved(false)
+          setSavedPostId(null)
+        } else {
+          // If isSaved is true but savedPostId is null, try to find the savedPostId
+          const savedPosts = await getSavedPosts(currentUser.uid);
+          const currentSavedPost = savedPosts.find(post => post.questionId === id);
+          if(currentSavedPost) {
+            await unsavePost(currentSavedPost.id);
+            setIsSaved(false);
+            setSavedPostId(null);
+          }
+        }
+      } else {
+        const savedPost = await savePost(currentUser.uid, id)
+        setIsSaved(true)
+        setSavedPostId(savedPost.id)
+      }
+    } catch (error) {
+      console.error("Error saving/unsaving post:", error)
+    }
+  }
+
+  const handleCopyCode = () => {
+    if (!code) return; // Prevent copying if no code exists
+    navigator.clipboard.writeText(code)
+      .then(() => {
+        setCopyFeedback("Copied!");
+        setTimeout(() => setCopyFeedback(null), 2000);
+      })
+      .catch((err) => {
+        console.error("Failed to copy code: ", err);
+        setCopyFeedback("Failed to copy");
+        setTimeout(() => setCopyFeedback(null), 2000);
+      });
+  };
+
+  // Edit handlers
+  const handleEditClick = () => {
+    setIsEditing(true);
+    setEditedTitle(title);
+    setEditedCode(code);
+    setEditedAnswer(answer);
+    setEditedTags(tags.join(', '));
+  };
+
+  const handleSaveEdit = async () => {
+    if (!currentUser) return;
+
+    setIsSubmitting(true); // Reuse submitting state for edit save
+    try {
+      const tagsArray = editedTags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
+
+      const updatedData = {
+        title: editedTitle,
+        code: editedCode || undefined, // Use undefined for empty optional fields
+        answer: editedAnswer || undefined,
+        tags: tagsArray.length > 0 ? tagsArray : undefined,
+      };
+
+      await updatePost(id, updatedData); // Use the new updatePost function
+
+      // Optionally, update local state or refetch post data
+      // For simplicity, we can just set isEditing to false and rely on a page refresh or parent component state update
+      setIsEditing(false);
+      // Consider adding feedback to the user that the save was successful
+
+    } catch (error) {
+      console.error("Error saving edit:", error);
+      // Provide user feedback on error
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    // Optionally, revert edited states to original post values if needed
+  };
+
+  return (
+    <motion.div
+      className="rounded-3xl border-4 border-black bg-[#fffbe7] shadow-[0_6px_0_#222] transition-transform duration-200 hover:scale-105 hover:-rotate-1 mb-4 font-comic will-change-transform"
+      initial={{ opacity: 0, y: 30 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, type: 'spring' }}
+    >
+      <div className="p-3 sm:p-4 md:p-5">
+        <div className="flex flex-wrap items-start gap-2 sm:gap-3 md:gap-4">
+          <div className="flex flex-col items-center">
+            <motion.button
+              whileTap={{ scale: 1.2, rotate: -10 }}
+              className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-full text-yellow-700 bg-yellow-300 border-4 border-black shadow-[0_4px_0_#222] hover:bg-yellow-400 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+              title="Upvote"
+              onClick={handleUpvote}
+              ref={upvoteRef}
+              disabled={userVote === "upvote"}
+            >
+              <ChevronUp className="h-6 w-6 sm:h-7 sm:w-7" />
+            </motion.button>
+            <motion.span
+              className="py-1 sm:py-2 text-base sm:text-lg font-extrabold text-pink-700"
+              animate={voteAnimation ? { scale: [1, 1.3, 1] } : {}}
+              transition={{ duration: 0.3 }}
+            >
+              {localVotes}
+            </motion.span>
+            <motion.button
+              whileTap={{ scale: 1.2, rotate: 10 }}
+              className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-full text-blue-700 bg-blue-200 border-4 border-black shadow-[0_4px_0_#222] hover:bg-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-300"
+              title="Downvote"
+              onClick={handleDownvote}
+              disabled={userVote === "downvote"}
+            >
+              <ChevronDown className="h-6 w-6 sm:h-7 sm:w-7" />
+            </motion.button>
+            {showCry && (
+              <motion.span
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none text-4xl select-none"
+                initial={{ opacity: 0, y: 10, scale: 0.7 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.7 }}
+                transition={{ duration: 0.5 }}
+              >
+                😢
+              </motion.span>
+            )}
+            {showConfetti && (
+              <motion.span
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none text-4xl select-none"
+                initial={{ opacity: 0, y: -10, scale: 0.7 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -10, scale: 0.7 }}
+                transition={{ duration: 0.5 }}
+              >
+                🎉
+              </motion.span>
+            )}
+          </div>
+          <div className="flex-1">
+            <h3 className="mb-1 sm:mb-2 text-base sm:text-lg font-extrabold text-pink-700 flex items-center gap-1 sm:gap-2 font-comic">
+              <span role="img" aria-label="sparkles">✨</span> {title}
+            </h3>
+            <div className="mb-2 sm:mb-3 flex flex-wrap gap-1 sm:gap-2 mt-1">
+              {tags.map((tag) => (
+                <Badge key={tag} className="rounded-full px-3 py-1 text-xs font-bold shadow-[0_2px_0_#222] bg-yellow-200 text-yellow-800 border-2 border-black font-comic" >
+                  {tag}
+                </Badge>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <div className="flex items-center gap-2">
+                {user?.avatar_url ? (
+                  <img
+                    src={user.avatar_url}
+                    alt={user.username}
+                    className="h-8 w-8 rounded-full border-2 border-black"
+                  />
+                ) : (
+                  <div className="h-8 w-8 rounded-full bg-gray-200 border-2 border-black flex items-center justify-center">
+                    <span className="text-sm font-bold text-gray-600">
+                      {user?.username?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?'}
+                    </span>
+                  </div>
+                )}
+                <span className="text-sm font-bold text-gray-900 font-comic break-words">
+                  {user?.username || 'Anonymous'}
+                </span>
+              </div>
+              <span className="text-sm text-gray-500 hidden sm:inline">•</span>
+              <div className="text-sm text-blue-500 font-semibold">Posted on {date}</div>
+            </div>
+          </div>
+          {currentUser && (
+            <button
+              onClick={handleSavePost}
+              className="flex items-center justify-center h-8 w-8 rounded-md text-gray-500 hover:bg-gray-100"
+              title={isSaved ? "Unsave Post" : "Save Post"}
+            >
+              {isSaved ? (
+                <BookmarkCheck className="h-5 w-5 text-blue-500" />
+              ) : (
+                <Bookmark className="h-5 w-5" />
+              )}
+            </button>
+          )}
+          {currentUser && currentUser.uid === authorId && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleEditClick}
+                className="flex items-center justify-center h-8 w-8 rounded-md text-gray-500 hover:bg-gray-100"
+                title="Edit Post"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.85 0 1 0 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+              </button>
+              <button
+                onClick={async () => {
+                  if (confirm('Are you sure you want to delete this post?')) {
+                    try {
+                      await deletePost(id);
+                      window.location.reload();
+                    } catch (error) {
+                      console.error("Error deleting post:", error);
+                      alert("Failed to delete post.");
+                    }
+                  }
+                }}
+                className="flex items-center justify-center h-8 w-8 rounded-md text-red-500 hover:bg-red-100"
+                title="Delete Post"
+              >
+                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><line x1="18" x2="12" y1="9" y2="15"/><line x1="12" x2="18" y1="9" y2="15"/></svg>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {isEditing ? (
+        <div className="p-3 sm:p-4 md:p-5 border-t">
+          <h2 className="mb-4 text-xl font-bold">Edit Post</h2>
+          <div className="mb-4">
+            <label htmlFor="edit-question-title" className="mb-1 block text-sm font-medium">
+              Question Title
+            </label>
+            <input
+              id="edit-question-title"
+              type="text"
+              className="w-full rounded-md border-2 border-black p-2"
+              value={editedTitle}
+              onChange={(e) => setEditedTitle(e.target.value)}
+            />
+          </div>
+          {code !== undefined && ( // Only show code editor if code exists
+            <div className="mb-4">
+              <label htmlFor="edit-code-snippet" className="mb-1 block text-sm font-medium">
+                Code Snippet
+              </label>
+              <Textarea
+                id="edit-code-snippet"
+                className="h-32 w-full rounded-md border-2 border-black p-3 text-sm font-mono"
+                placeholder="Paste your code here..."
+                value={editedCode}
+                onChange={(e) => setEditedCode(e.target.value)}
+              />
+            </div>
+          )}
+          {answer !== undefined && ( // Only show answer editor if answer exists
+            <div className="mb-4">
+              <label htmlFor="edit-explanation" className="mb-1 block text-sm font-medium">
+                Explanation / Answer
+              </label>
+              <Textarea
+                id="edit-explanation"
+                className="h-32 w-full rounded-md border-2 border-black p-3 text-sm"
+                placeholder="Explain how the code works..."
+                value={editedAnswer}
+                onChange={(e) => setEditedAnswer(e.target.value)}
+              />
+            </div>
+          )}
+          {tags !== undefined && ( // Only show tags input if tags exist
+            <div className="mb-4">
+              <label htmlFor="edit-tags" className="mb-1 block text-sm font-medium">
+                Tags (comma-separated)
+              </label>
+              <input
+                id="edit-tags"
+                type="text"
+                className="w-full rounded-md border-2 border-black p-2"
+                placeholder="E.g., python, list, slicing"
+                value={editedTags}
+                onChange={(e) => setEditedTags(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Add relevant tags separated by commas
+              </p>
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={handleCancelEdit} disabled={isSubmitting}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleSaveEdit} disabled={isSubmitting}>
+              {isSubmitting ? "Saving..." : "Save Changes"}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {code && (
+            <div className="border-t px-3 sm:px-4 md:px-5 py-4">
+              <div className="flex items-center gap-2 sm:gap-3 md:gap-4 mb-2">
+                <button
+                  onClick={() => setShowCode(!showCode)}
+                  className="flex items-center gap-2 text-sm font-medium text-blue-600 hover:underline"
+                >
+                  {showCode ? (
+                    <>
+                      <ChevronUp className="h-4 w-4" /> Hide Code
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="h-4 w-4" /> Show Code
+                    </>
+                  )}
+                </button>
+                <div className="relative">
+                  <button
+                    className="flex items-center gap-1 h-auto p-0 text-sm font-medium text-blue-600 hover:underline"
+                    onClick={handleCopyCode}
+                    title="Copy code"
+                  >
+                    <Copy className="h-4 w-4" />
+                    <span>Copy Code</span>
+                  </button>
+                   {copyFeedback && (
+                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-1 text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded-md shadow-sm z-10 whitespace-nowrap">
+                        {copyFeedback}
+                      </div>
+                    )}
+                </div>
+              </div>
+              <AnimatePresence>
+                {showCode && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.2 }}
+                    className="relative rounded-md bg-gray-900 p-4 will-change-transform translate-z-0"
+                  >
+                    <MonacoEditor
+                      height="200px"
+                      defaultLanguage="python"
+                      value={code}
+                      theme="vs-dark"
+                      options={{ readOnly: true, minimap: { enabled: false }, fontSize: 14 }}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+
+          <div className="border-t px-3 sm:px-4 md:px-5 py-4">
+            <button
+              onClick={() => setShowAnswer(!showAnswer)}
+              className="flex items-center gap-2 text-sm font-medium text-blue-600"
+            >
+              <AnimatePresence>
+                {showAnswer ? (
+                  <motion.span
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex items-center gap-2"
+                  >
+                    <ChevronUp className="h-4 w-4" /> Hide Answer
+                  </motion.span>
+                ) : (
+                  <motion.span
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 5 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex items-center gap-2"
+                  >
+                    <ChevronDown className="h-4 w-4" /> Show Answer
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </button>
+          </div>
+
+          {answer && (
+            <div className="border-t px-3 sm:px-4 md:px-5 py-4">
+              <AnimatePresence>
+                {showAnswer && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.2 }}
+                    className="mt-3 text-sm text-gray-800 will-change-transform translate-z-0"
+                  >
+                    {answer}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+
+          <div className="border-t px-3 sm:px-4 md:px-5 py-4">
+            <h4 className="mb-2 font-medium">Comments</h4>
+            <div className="max-h-[150px] overflow-y-auto pr-2">
+              {comments.length > 0 ? (
+                <div className="space-y-2">
+                  {comments.map((comment) => (
+                    <div key={comment.id} className="rounded-md border p-2">
+                      <p className="text-sm text-gray-700">{comment.text}</p>
+                      <div className="mt-1 text-xs text-gray-500">
+                        Posted by {comment.authorName} on {comment.createdAt.toLocaleDateString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-sm text-gray-500">No comments yet. Be the first to comment!</p>
+              )}
+            </div>
+            <div className="mt-3">
+              <Textarea
+                placeholder="Add a comment..."
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                className="mb-2 min-h-[60px] w-full resize-none"
+              />
+              <Button
+                size="sm"
+                className="ml-auto"
+                onClick={handleSubmitComment}
+                disabled={!currentUser || !comment.trim() || isSubmitting}
+              >
+                {isSubmitting ? "Posting..." : "Post"}
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+    </motion.div>
+  )
+}

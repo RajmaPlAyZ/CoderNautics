@@ -2,6 +2,7 @@
 import { useAuth } from '@/components/AuthProvider';
 import QuestionCard from '@/components/question-card';
 // import { supabase } from '@/lib/supabaseClient';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { app } from '@/lib/firebaseClient';
 import { SavedPost, deletePost, getPostById, getPostsByUserId, getSavedPosts, unsavePost } from "@/lib/posts";
@@ -9,6 +10,53 @@ import { doc, getDoc, getFirestore, setDoc } from "firebase/firestore";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+
+// Helper function to get rank badge based on points (copy from QuestionCard.tsx)
+const getRankBadge = (points?: number) => {
+  if (points === undefined || points === null) {
+    return null; // Or a default badge if needed
+  }
+
+  let rankText = '';
+  let bgColor = '';
+  let textColor = '';
+  let borderColor = 'border-black'; // Add border color
+  let Icon = null;
+
+  // Assuming you have imported lucide-react icons like MinusCircle, Compass, Ship, Star
+  // If not, you'll need to import them as well
+
+  if (points >= 0 && points <= 50) {
+    rankText = 'Novice';
+    bgColor = 'bg-gray-200'; // Brighter gray
+    textColor = 'text-gray-800';
+    // Icon = MinusCircle;
+  } else if (points >= 51 && points <= 200) {
+    rankText = 'Explorer';
+    bgColor = 'bg-green-200'; // Brighter green
+    textColor = 'text-green-800';
+    // Icon = Compass;
+  } else if (points >= 201 && points <= 500) {
+    rankText = 'Navigator';
+    bgColor = 'bg-blue-200'; // Brighter blue
+    textColor = 'text-blue-800';
+    // Icon = Ship;
+  } else if (points >= 501) {
+    rankText = 'Captain';
+    bgColor = 'bg-purple-200'; // Brighter purple
+    textColor = 'text-purple-800';
+    // Icon = Star;
+  }
+
+  if (!rankText) return null;
+
+  return (
+    <Badge className={`flex items-center gap-1 rounded-md border border-black ${bgColor} ${textColor} px-2.5 py-1 text-xs font-bold`}>
+      {/* {Icon && <Icon className="h-3 w-3" />} */}{}{/* Render Icon if imported */}
+      {rankText}
+    </Badge>
+  );
+};
 
 const firestore = getFirestore(app);
 const storage = getStorage(app);
@@ -332,10 +380,13 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="space-y-4">
-                  {/* User Score */}
+                  {/* User Score and Rank */}
                   <div className="border-t-2 border-gray-200 pt-4 mt-4">
-                    <h3 className="text-xl font-extrabold mb-2 text-pink-700">Your Score</h3>
-                    <p className="text-2xl font-bold text-gray-900">{userScore} Nautics 💰</p>
+                    <h3 className="text-xl font-extrabold mb-2 text-pink-700">Your Score & Rank</h3>
+                    <div className="flex items-center gap-2">
+                      <p className="text-2xl font-bold text-gray-900">{userScore} Nautics 💰</p>
+                      {getRankBadge(userScore)}
+                    </div>
                   </div>
 
                   <button onClick={logout} className="w-full bg-red-300 text-red-800 font-extrabold py-3 rounded-md border-4 border-black shadow-[0_4px_0_#222] hover:bg-red-400 transition-all duration-150">

@@ -34,6 +34,50 @@ interface QuestionCardProps {
   onUnsave?: () => Promise<void>
 }
 
+// Helper function to get rank badge based on points
+export const getRankBadge = (points?: number) => {
+  if (points === undefined || points === null) {
+    return null; // Or a default badge if needed
+  }
+
+  let rankText = '';
+  let bgColor = '';
+  let textColor = '';
+  let borderColor = 'border-black'; // Add border color
+  let Icon = null;
+
+  if (points >= 0 && points <= 50) {
+    rankText = 'Novice';
+    bgColor = 'bg-gray-200'; // Brighter gray
+    textColor = 'text-gray-800';
+    Icon = MinusCircle;
+  } else if (points >= 51 && points <= 200) {
+    rankText = 'Explorer';
+    bgColor = 'bg-green-200'; // Brighter green
+    textColor = 'text-green-800';
+    Icon = Compass;
+  } else if (points >= 201 && points <= 500) {
+    rankText = 'Navigator';
+    bgColor = 'bg-blue-200'; // Brighter blue
+    textColor = 'text-blue-800';
+    Icon = Ship;
+  } else if (points >= 501) {
+    rankText = 'Captain';
+    bgColor = 'bg-purple-200'; // Brighter purple
+    textColor = 'text-purple-800';
+    Icon = Star;
+  }
+
+  if (!rankText) return null;
+
+  return (
+    <Badge className={`flex items-center gap-1 rounded-md border border-black ${bgColor} ${textColor} px-2.5 py-1 text-xs font-bold`}>
+      {Icon && <Icon className="h-3 w-3" />} {}{/* Render Icon */}
+      {rankText}
+    </Badge>
+  );
+};
+
 export default function QuestionCard({
   id,
   title,
@@ -79,56 +123,12 @@ export default function QuestionCard({
   const [confettiDims] = useState<{width: number, height: number}>({width: 350, height: 200});
   const upvoteRef = useRef<HTMLButtonElement>(null)
 
+  const editorRef = useRef(null)
+
   const isAuthor = currentUser && currentUser.uid === authorId;
 
   const [isPostActive, setIsPostActive] = useState(active);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
-
-  const editorRef = useRef(null)
-
-  // Helper function to get rank badge based on points
-  const getRankBadge = (points?: number) => {
-    if (points === undefined || points === null) {
-      return null; // Or a default badge if needed
-    }
-
-    let rankText = '';
-    let bgColor = '';
-    let textColor = '';
-    let borderColor = 'border-black'; // Add border color
-    let Icon = null;
-
-    if (points >= 0 && points <= 50) {
-      rankText = 'Novice';
-      bgColor = 'bg-gray-200'; // Brighter gray
-      textColor = 'text-gray-800';
-      Icon = MinusCircle;
-    } else if (points >= 51 && points <= 200) {
-      rankText = 'Explorer';
-      bgColor = 'bg-green-200'; // Brighter green
-      textColor = 'text-green-800';
-      Icon = Compass;
-    } else if (points >= 201 && points <= 500) {
-      rankText = 'Navigator';
-      bgColor = 'bg-blue-200'; // Brighter blue
-      textColor = 'text-blue-800';
-      Icon = Ship;
-    } else if (points >= 501) {
-      rankText = 'Captain';
-      bgColor = 'bg-purple-200'; // Brighter purple
-      textColor = 'text-purple-800';
-      Icon = Star;
-    }
-
-    if (!rankText) return null;
-
-    return (
-      <Badge className={`flex items-center gap-1 rounded-md border border-black ${bgColor} ${textColor} px-2.5 py-1 text-xs font-bold`}>
-        {Icon && <Icon className="h-3 w-3" />} {}{/* Render Icon */}
-        {rankText}
-      </Badge>
-    );
-  };
 
   useEffect(() => {
     loadComments()
@@ -513,16 +513,6 @@ export default function QuestionCard({
                 )}
               </div>
             )}
-            {isAuthor && (
-              <button
-                onClick={handleToggleActive}
-                disabled={isUpdatingStatus}
-                className={`flex items-center justify-center h-8 w-auto px-2 rounded-md text-sm ${isPostActive ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'} hover:${isPostActive ? 'bg-green-300' : 'bg-red-300'}`}
-                title={isPostActive ? "Mark as Inactive" : "Mark as Active"}
-              >
-                {isPostActive ? "Active" : "Inactive"}
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -744,32 +734,61 @@ export default function QuestionCard({
 
       {/* User and date information moved to bottom */}
       <div className="pb-6 px-3 sm:px-4 md:px-5">
-        {/* Container for Avatar and stacked Username/Date */}
-        <div className="mt-4 pt-4 border-t-2 border-gray-200 flex items-start gap-2">
-          {user?.avatar_url ? (
-            <img
-              src={user.avatar_url}
-              alt={user.username}
-              className="h-8 w-8 rounded-full border-2 border-black flex-shrink-0"
-            />
-          ) : (
-            <div className="h-8 w-8 rounded-full bg-gray-200 border-2 border-black flex items-center justify-center flex-shrink-0">
-              <span className="text-sm font-bold text-gray-600">
-                {user?.username?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?'}
-              </span>
+        {/* Container for Avatar and stacked Username/Date and Active/Inactive status */}
+        <div className="mt-4 pt-4 border-t-2 border-gray-200 flex items-center justify-between gap-2">
+          {/* Container for Avatar and stacked Username/Date */}
+          <div className="flex items-start gap-2">
+            {user?.avatar_url ? (
+              <img
+                src={user.avatar_url}
+                alt={user.username}
+                className="h-8 w-8 rounded-full border-2 border-black flex-shrink-0"
+              />
+            ) : (
+              <div className="h-8 w-8 rounded-full bg-gray-200 border-2 border-black flex items-center justify-center flex-shrink-0">
+                <span className="text-sm font-bold text-gray-600">
+                  {user?.username?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?'}
+                </span>
+              </div>
+            )}
+            {/* Username, Rank Badge, and Date stacked vertically */}
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1">
+                <span className="text-sm font-bold text-gray-900 font-comic break-words">
+                  {user?.username || 'Anonymous'}
+                </span>
+                {/* Insert Rank Badge here */}
+                {getRankBadge(user?.points)}
+                <span className="text-sm text-gray-500 hidden sm:inline">•</span>
+              </div>
+              <div className="text-sm text-blue-500 font-semibold">Posted on {date}</div>
             </div>
-          )}
-          {/* Username, Rank Badge, and Date stacked vertically */}
-          <div className="flex flex-col">
-            <div className="flex items-center gap-1">
-              <span className="text-sm font-bold text-gray-900 font-comic break-words">
-                {user?.username || 'Anonymous'}
-              </span>
-              {/* Insert Rank Badge here */}
-              {getRankBadge(user?.points)}
-              <span className="text-sm text-gray-500 hidden sm:inline">•</span>
-            </div>
-            <div className="text-sm text-blue-500 font-semibold">Posted on {date}</div>
+          </div>
+
+          {/* Container for Active/Inactive status */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Display Active/Inactive status for everyone *except* the author */}
+            {!isAuthor && isPostActive && (
+              <Badge className="flex items-center justify-center h-8 w-auto px-2 rounded-md text-sm bg-green-200 text-green-800">
+                Active
+              </Badge>
+            )}
+            {!isAuthor && !isPostActive && (
+              <Badge className="flex items-center justify-circle h-8 w-auto px-2 rounded-md text-sm bg-red-200 text-red-800">
+                Inactive
+              </Badge>
+            )}
+            {/* Status toggle button (only for author) */}
+            {isAuthor && (
+              <button
+                onClick={handleToggleActive}
+                disabled={isUpdatingStatus}
+                className={`flex items-center justify-center h-8 w-auto px-2 rounded-md text-sm ${isPostActive ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'} hover:${isPostActive ? 'bg-green-300' : 'bg-red-300'}`}
+                title={isPostActive ? "Mark as Inactive" : "Mark as Active"}
+              >
+                {isPostActive ? "Active" : "Inactive"}
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -1,7 +1,7 @@
 "use client";
 import { app } from '@/lib/firebaseClient';
 import { doc, getFirestore, onSnapshot } from "firebase/firestore";
-import { Home, LogIn, LogOut, Shield, User, UserPlus } from 'lucide-react';
+import { Home, LogIn, LogOut, Shield, Trophy, User, UserPlus } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -11,6 +11,7 @@ const navLinks = [
   { label: 'Home', href: '/', icon: Home },
   { label: 'Profile', href: '/profile', icon: User, auth: true },
   { label: 'Admin', href: '/admin', icon: Shield, admin: true },
+  { label: 'Leaderboard', href: '/leaderboard', icon: Trophy },
 ];
 
 const firestore = getFirestore(app);

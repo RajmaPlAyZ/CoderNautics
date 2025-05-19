@@ -1,4 +1,4 @@
-import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, increment, query, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, increment, orderBy, query, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { firestore } from './firebaseClient';
 
 // Assuming a basic Post structure exists elsewhere or defining it here for clarity
@@ -88,6 +88,7 @@ export async function getPostsByUserId(userId: string): Promise<Post[]> {
         author = {
           username: profileData.username || profileData.email,
           avatar_url: profileData.avatar_url || null,
+          points: profileData.score || 0,
         };
       }
     }
@@ -157,7 +158,7 @@ export async function addDoubt(doubtData: { title: string; description: string; 
 
 export async function getAllPosts(): Promise<Post[]> {
   const postsRef = collection(firestore, 'questions');
-  const q = query(postsRef);
+  const q = query(postsRef, orderBy('date', 'desc')); // Sort by date descending
 
   const querySnapshot = await getDocs(q);
   
@@ -174,6 +175,7 @@ export async function getAllPosts(): Promise<Post[]> {
         author = {
           username: profileData.username || profileData.email,
           avatar_url: profileData.avatar_url || null,
+          points: profileData.score || 0,
         };
       }
     }
@@ -185,6 +187,8 @@ export async function getAllPosts(): Promise<Post[]> {
       user: author,
       active: postData.active ?? true,
       type: postData.type || 'post',
+      votes: postData.votes || 0,
+      downvotes: postData.downvotes || 0,
     } as Post;
   }));
 
@@ -207,6 +211,7 @@ export async function getPostById(postId: string): Promise<Post | null> {
         author = {
           username: profileData.username || profileData.email,
           avatar_url: profileData.avatar_url || null,
+          points: profileData.score || 0,
         };
       }
     }
@@ -373,4 +378,60 @@ export async function updateUserScore(userId: string, points: number): Promise<v
   await updateDoc(profileRef, {
     score: increment(points)
   });
+}
+
+export async function getFilteredPosts(filter: string): Promise<Post[]> {
+  const postsRef = collection(firestore, 'questions');
+  let q;
+
+  switch (filter) {
+    case 'Active':
+      q = query(postsRef, where('active', '==', true), orderBy('date', 'desc'));
+      break;
+    case 'Bountied':
+      q = query(postsRef, where('bounty', '>', 0), orderBy('bounty', 'desc'), orderBy('date', 'desc'));
+      break;
+    case 'Doubts':
+      q = query(postsRef, where('type', '==', 'doubt'), orderBy('date', 'desc'));
+      break;
+    case 'Unanswered':
+      q = query(postsRef, where('answer', '==', ''), orderBy('date', 'desc'));
+      break;
+    default: // 'Newest'
+      q = query(postsRef, orderBy('date', 'desc'));
+  }
+
+  const querySnapshot = await getDocs(q);
+  
+  const postsWithAuthors = await Promise.all(querySnapshot.docs.map(async docSnapshot => {
+    const postData = docSnapshot.data();
+    const authorId = postData.authorId;
+    let author = undefined;
+
+    if (authorId) {
+      const profileRef = doc(firestore, "profiles", authorId);
+      const profileSnap = await getDoc(profileRef);
+      if (profileSnap.exists()) {
+        const profileData = profileSnap.data();
+        author = {
+          username: profileData.username || profileData.email,
+          avatar_url: profileData.avatar_url || null,
+          points: profileData.score || 0,
+        };
+      }
+    }
+
+    return {
+      id: docSnapshot.id,
+      ...postData,
+      date: postData.date?.toDate() || new Date(postData.date),
+      user: author,
+      active: postData.active ?? true,
+      type: postData.type || 'post',
+      votes: postData.votes || 0,
+      downvotes: postData.downvotes || 0,
+    } as Post;
+  }));
+
+  return postsWithAuthors;
 } 

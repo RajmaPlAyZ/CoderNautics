@@ -1,3 +1,5 @@
+'use client'
+
 import { AlertTriangle, BookOpen, Search, Tag, Trophy } from "lucide-react"
 
 export default function GuidelinesSidebar() {

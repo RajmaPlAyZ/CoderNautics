@@ -1,8 +1,6 @@
 "use client"
 import { useAuth } from '@/components/AuthProvider';
-import QuestionCard from '@/components/question-card';
-// import { supabase } from '@/lib/supabaseClient';
-import { Badge } from '@/components/ui/badge';
+import QuestionCard, { getRankBadge } from '@/components/question-card';
 import { Button } from '@/components/ui/button';
 import { app } from '@/lib/firebaseClient';
 import { SavedPost, deletePost, getPostById, getPostsByUserId, getSavedPosts, unsavePost } from "@/lib/posts";
@@ -10,53 +8,6 @@ import { doc, getDoc, getFirestore, setDoc } from "firebase/firestore";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-
-// Helper function to get rank badge based on points (copy from QuestionCard.tsx)
-const getRankBadge = (points?: number) => {
-  if (points === undefined || points === null) {
-    return null; // Or a default badge if needed
-  }
-
-  let rankText = '';
-  let bgColor = '';
-  let textColor = '';
-  let borderColor = 'border-black'; // Add border color
-  let Icon = null;
-
-  // Assuming you have imported lucide-react icons like MinusCircle, Compass, Ship, Star
-  // If not, you'll need to import them as well
-
-  if (points >= 0 && points <= 50) {
-    rankText = 'Novice';
-    bgColor = 'bg-gray-200'; // Brighter gray
-    textColor = 'text-gray-800';
-    // Icon = MinusCircle;
-  } else if (points >= 51 && points <= 200) {
-    rankText = 'Explorer';
-    bgColor = 'bg-green-200'; // Brighter green
-    textColor = 'text-green-800';
-    // Icon = Compass;
-  } else if (points >= 201 && points <= 500) {
-    rankText = 'Navigator';
-    bgColor = 'bg-blue-200'; // Brighter blue
-    textColor = 'text-blue-800';
-    // Icon = Ship;
-  } else if (points >= 501) {
-    rankText = 'Captain';
-    bgColor = 'bg-purple-200'; // Brighter purple
-    textColor = 'text-purple-800';
-    // Icon = Star;
-  }
-
-  if (!rankText) return null;
-
-  return (
-    <Badge className={`flex items-center gap-1 rounded-md border border-black ${bgColor} ${textColor} px-2.5 py-1 text-xs font-bold`}>
-      {/* {Icon && <Icon className="h-3 w-3" />} */}{}{/* Render Icon if imported */}
-      {rankText}
-    </Badge>
-  );
-};
 
 const firestore = getFirestore(app);
 const storage = getStorage(app);
@@ -168,8 +119,9 @@ export default function ProfilePage() {
   if (!user) return null;
 
   const handleAvatarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files[0]) {
-      setAvatarFile(event.target.files[0]);
+    const file = event.target.files?.[0];
+    if (file) {
+      setAvatarFile(file);
       setUploadError(null);
     } else {
       setAvatarFile(null);
@@ -179,10 +131,24 @@ export default function ProfilePage() {
   const handleAvatarUpload = async () => {
     if (!avatarFile || !user) return;
 
+    // Validate file before upload
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    
+    if (avatarFile.size > maxSize) {
+      setUploadError('File size must be less than 5MB');
+      return;
+    }
+    
+    if (!allowedTypes.includes(avatarFile.type)) {
+      setUploadError('Please upload a valid image file (JPEG, PNG, GIF, or WebP)');
+      return;
+    }
+
     setUploading(true);
     setUploadError(null);
 
-    const fileExt = avatarFile.name.split('.').pop();
+    const fileExt = avatarFile.name.split('.').pop()?.toLowerCase();
     const filePath = `${user.uid}/avatar.${fileExt}`;
     const storageRef = ref(storage, filePath);
 
@@ -191,6 +157,7 @@ export default function ProfilePage() {
       console.log('File path:', filePath);
       console.log('File type:', avatarFile.type);
       console.log('File size:', avatarFile.size);
+      console.log('Storage bucket:', storage.app.options.storageBucket);
 
       // Upload the file to Firebase Storage
       const uploadResult = await uploadBytes(storageRef, avatarFile);
@@ -210,20 +177,38 @@ export default function ProfilePage() {
 
       console.log('Avatar uploaded and profile updated successfully!');
       setAvatarUrl(downloadURL); // Update the state with the new avatar URL
-      // window.location.reload(); // No need to hard reload
+      
+      // Force a page reload to update all components with the new avatar
+      window.location.reload();
 
     } catch (error: any) {
       console.error('Upload error details:', {
+        code: error.code,
         name: error.name,
         message: error.message,
         stack: error.stack,
-        cause: error.cause
+        cause: error.cause,
+        serverResponse: error.serverResponse
       });
       
-      setUploadError(
-        error.message || 
-        'An unexpected error occurred during upload. Please try again.'
-      );
+      // Provide more specific error messages
+      let errorMessage = 'An unexpected error occurred during upload. Please try again.';
+      
+      if (error.code === 'storage/unauthorized') {
+        errorMessage = 'You are not authorized to upload files. Please make sure you are logged in.';
+      } else if (error.code === 'storage/canceled') {
+        errorMessage = 'Upload was canceled. Please try again.';
+      } else if (error.code === 'storage/unknown') {
+        errorMessage = 'An unknown error occurred. This might be due to network issues or Firebase configuration. Please check your internet connection and try again.';
+      } else if (error.code === 'storage/invalid-format') {
+        errorMessage = 'Invalid file format. Please upload a valid image file.';
+      } else if (error.code === 'storage/object-not-found') {
+        errorMessage = 'File not found. Please try uploading again.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      setUploadError(errorMessage);
     } finally {
       setUploading(false);
       setAvatarFile(null);

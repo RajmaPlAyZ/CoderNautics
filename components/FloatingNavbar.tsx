@@ -42,13 +42,25 @@ export default function FloatingNavbar() {
 
   return (
     <>
-      <nav className="fixed top-4 sm:top-6 left-1/2 z-50 -translate-x-1/2 flex items-center justify-between w-[95vw] sm:w-[90vw] max-w-4xl px-2 sm:px-6 py-2 sm:py-3 rounded-xl bg-white border-4 border-black shadow-[0_6px_0_#222] backdrop-blur"
-        style={{ boxShadow: '0 6px 0 #222' }}
-      >
+      <nav className="fixed top-4 sm:top-6 left-1/2 z-50 -translate-x-1/2 flex items-center justify-between w-[95vw] sm:w-[90vw] max-w-4xl px-2 sm:px-6 py-2 sm:py-3 rounded-xl bg-white border-4 border-black shadow-[0_6px_0_#222] backdrop-blur">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-1 select-none">
+        <Link href="/" className="flex items-center gap-2 select-none">
           <span className="text-lg md:text-2xl font-extrabold tracking-tight font-comic text-black flex items-center gap-2">
-            <img src="https://firebasestorage.googleapis.com/v0/b/codernautics.firebasestorage.app/o/df001333-13eb-4a94-bc58-bbbf64ee46c4.png?alt=media&token=25704cb5-5ea5-4057-8f20-8dc09d1af532" alt="CoderNautics Logo" className="h-6 w-auto sm:h-8 md:h-10" />
+            {/* Astronaut Logo */}
+            <img 
+              src="/logo.png" 
+              alt="CoderNautics Logo" 
+              className="h-6 w-6 sm:h-8 sm:w-8 md:h-10 md:w-10 flex-shrink-0"
+              onError={(e) => {
+                // Fallback to text if image fails to load
+                e.currentTarget.style.display = 'none';
+                e.currentTarget.nextElementSibling?.classList.remove('hidden');
+              }}
+            />
+            {/* Fallback text logo */}
+            <div className="hidden h-6 w-6 sm:h-8 sm:w-8 md:h-10 md:w-10 items-center justify-center bg-gradient-to-br from-blue-500 to-red-500 rounded-lg text-white font-bold text-sm sm:text-base md:text-lg shadow-sm">
+              ⚡
+            </div>
             <span><span className="text-blue-600">Coder</span><span className="text-red-600">Nautics</span></span>
           </span>
         </Link>

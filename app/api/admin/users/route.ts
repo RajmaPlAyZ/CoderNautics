@@ -15,6 +15,13 @@ export async function GET(req: NextRequest) {
   console.log('Attempting to list users...'); // Log start of the function
   console.log('Value of FIREBASE_ADMIN_SERVICE_ACCOUNT_KEY:', process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_KEY ? 'Set' : 'Not Set'); // Log the variable status
 
+  if (!adminAuth) {
+    return NextResponse.json({ 
+      message: 'Admin features are not available. Firebase Admin SDK is not configured.',
+      error: 'FIREBASE_ADMIN_SERVICE_ACCOUNT_KEY environment variable is not set'
+    }, { status: 503 });
+  }
+
   try {
     // Implement logic to fetch users using Firebase Admin SDK
     const listUsersResult = await adminAuth.listUsers();
@@ -36,6 +43,13 @@ export async function GET(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  if (!adminAuth) {
+    return NextResponse.json({ 
+      message: 'Admin features are not available. Firebase Admin SDK is not configured.',
+      error: 'FIREBASE_ADMIN_SERVICE_ACCOUNT_KEY environment variable is not set'
+    }, { status: 503 });
+  }
+
   try {
     const { uid } = await req.json();
 
@@ -53,6 +67,13 @@ export async function DELETE(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  if (!adminAuth) {
+    return NextResponse.json({ 
+      message: 'Admin features are not available. Firebase Admin SDK is not configured.',
+      error: 'FIREBASE_ADMIN_SERVICE_ACCOUNT_KEY environment variable is not set'
+    }, { status: 503 });
+  }
+
   try {
     const { uid, ...updates } = await req.json();
 

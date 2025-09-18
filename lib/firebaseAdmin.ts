@@ -26,43 +26,37 @@ let serviceAccount;
 // Get the service account key from environment variable
 const serviceAccountKey = process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_KEY;
 
-if (!serviceAccountKey) {
-  throw new Error('FIREBASE_ADMIN_SERVICE_ACCOUNT_KEY environment variable is not set.');
-}
-
-// Parse the service account key
-try {
-  serviceAccount = JSON.parse(serviceAccountKey);
-  console.log('Service account key loaded from environment variable and parsed successfully.');
-} catch (error) {
-  console.error('Error parsing service account key:', error);
-  throw new Error('Failed to parse FIREBASE_ADMIN_SERVICE_ACCOUNT_KEY');
-}
-
-// Initialize Firebase Admin SDK if it hasn't been initialized
-if (!getApps().length) {
-  console.log('Initializing Firebase Admin SDK...');
-  try {
-    initializeApp({
-      credential: cert(serviceAccount)
-    });
-    console.log('Firebase Admin SDK initialized.');
-  } catch (error) {
-    console.error('Error initializing Firebase Admin SDK:', error);
-    throw error;
-  }
-}
-
-// Export the auth instance
-export const adminAuth = getAuth();
-
-// Only export other services if the app was initialized
+let adminAuth: ReturnType<typeof getAuth> | undefined;
 let adminFirestore: ReturnType<typeof getFirestore> | undefined;
 let adminStorage: ReturnType<typeof getStorage> | undefined;
 
-if (getApps().length) {
-  adminFirestore = getFirestore();
-  adminStorage = getStorage();
+// Only initialize Firebase Admin SDK if service account key is available
+if (serviceAccountKey) {
+  try {
+    serviceAccount = JSON.parse(serviceAccountKey);
+    console.log('Service account key loaded from environment variable and parsed successfully.');
+    
+    // Initialize Firebase Admin SDK if it hasn't been initialized
+    if (!getApps().length) {
+      console.log('Initializing Firebase Admin SDK...');
+      initializeApp({
+        credential: cert(serviceAccount)
+      });
+      console.log('Firebase Admin SDK initialized.');
+    }
+    
+    // Export the services
+    adminAuth = getAuth();
+    adminFirestore = getFirestore();
+    adminStorage = getStorage();
+    
+  } catch (error) {
+    console.error('Error initializing Firebase Admin SDK:', error);
+    console.warn('Firebase Admin SDK not available. Admin features will be disabled.');
+  }
+} else {
+  console.warn('FIREBASE_ADMIN_SERVICE_ACCOUNT_KEY environment variable is not set. Admin features will be disabled.');
 }
 
-export { adminFirestore, adminStorage };
+// Export the services (they will be undefined if not initialized)
+export { adminAuth, adminFirestore, adminStorage };

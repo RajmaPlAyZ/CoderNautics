@@ -3,28 +3,19 @@
 import PostEditRow from '@/components/admin/post-edit-row';
 import UserEditRow from '@/components/admin/user-edit-row';
 import { useAuth } from '@/components/AuthProvider';
-import { Post } from '@/lib/posts';
+import { getAllPosts, deletePost, updatePost, Post } from '@/lib/posts';
+import { getAllUsers, deleteUser, updateUser, AdminUser } from '@/lib/adminUsers';
 import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
-interface User {
-  uid: string;
-  email: string | null;
-  displayName: string | null;
-  photoURL: string | null;
-  disabled: boolean;
-  emailVerified: boolean;
-}
-
 export default function AdminPanel() {
   const { user, loading } = useAuth();
   const router = useRouter();
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const [isSavingUser, setIsSavingUser] = useState(false);
   const [posts, setPosts] = useState<Post[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(true);
@@ -39,14 +30,12 @@ export default function AdminPanel() {
   }, [user, loading, router]);
 
   useEffect(() => {
+    if (!user?.isAdmin) return;
+
     const fetchUsers = async () => {
       try {
-        const response = await fetch('/api/admin/users');
-        if (!response.ok) {
-          throw new Error('Failed to fetch users');
-        }
-        const data = await response.json();
-        setUsers(data.users);
+        const fetchedUsers = await getAllUsers();
+        setUsers(fetchedUsers);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch users');
       } finally {
@@ -56,12 +45,8 @@ export default function AdminPanel() {
 
     const fetchPosts = async () => {
       try {
-        const response = await fetch('/api/admin/posts');
-        if (!response.ok) {
-          throw new Error('Failed to fetch posts');
-        }
-        const data = await response.json();
-        setPosts(data.posts);
+        const fetchedPosts = await getAllPosts();
+        setPosts(fetchedPosts);
       } catch (err) {
         setPostError(err instanceof Error ? err.message : 'Failed to fetch posts');
       } finally {
@@ -69,146 +54,64 @@ export default function AdminPanel() {
       }
     };
 
-    if (user?.isAdmin) {
-      fetchUsers();
-      fetchPosts();
-    }
+    fetchUsers();
+    fetchPosts();
   }, [user]);
 
   const handleDeleteUser = async (uid: string) => {
-    if (!confirm('Are you sure you want to delete this user?')) {
-      return;
-    }
-
+    if (!confirm('Are you sure you want to delete this user?')) return;
     try {
-      const response = await fetch(`/api/admin/users`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ uid }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to delete user');
-      }
-
-      // Remove the deleted user from the local state
-      setUsers(users.filter(user => user.uid !== uid));
-      console.log(`User ${uid} deleted successfully.`);
-
+      await deleteUser(uid);
+      setUsers(users.filter(u => u.uid !== uid));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete user');
-      console.error('Error deleting user:', err);
     }
   };
 
-  const handleEditClick = (user: User) => {
-    setEditingUser(user);
-  };
+  const handleEditClick = (u: AdminUser) => setEditingUser(u);
 
-  const handleSaveEdit = async (updatedUser: User) => {
+  const handleSaveEdit = async (updatedUser: AdminUser) => {
     try {
       setIsSavingUser(true);
-      const response = await fetch(`/api/admin/users`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(updatedUser),
-      });
-
-      if (!response.ok) {
-         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to update user');
-      }
-
-      // Update the user in the local state
-      setUsers(users.map(user => user.uid === updatedUser.uid ? updatedUser : user));
+      await updateUser(updatedUser);
+      setUsers(users.map(u => u.uid === updatedUser.uid ? updatedUser : u));
       setEditingUser(null);
-      console.log(`User ${updatedUser.uid} updated successfully.`);
-
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update user');
-       console.error('Error updating user:', err);
     } finally {
       setIsSavingUser(false);
     }
   };
 
-  const handleCancelEdit = () => {
-    setEditingUser(null);
-  };
+  const handleCancelEdit = () => setEditingUser(null);
 
   const handleDeletePost = async (postId: string) => {
-    if (!confirm('Are you sure you want to delete this post?')) {
-      return;
-    }
-
+    if (!confirm('Are you sure you want to delete this post?')) return;
     try {
-      const response = await fetch(`/api/admin/posts`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ id: postId }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to delete post');
-      }
-
-      // Remove the deleted post from the local state
-      setPosts(posts.filter(post => post.id !== postId));
-      console.log(`Post ${postId} deleted successfully.`);
-
+      await deletePost(postId);
+      setPosts(posts.filter(p => p.id !== postId));
     } catch (err) {
       setPostError(err instanceof Error ? err.message : 'Failed to delete post');
-      console.error('Error deleting post:', err);
     }
   };
 
-  const handleEditPostClick = (post: Post) => {
-    setEditingPost(post);
-  };
+  const handleEditPostClick = (post: Post) => setEditingPost(post);
 
   const handleSavePostEdit = async (updatedPostData: { id: string; title?: string; code?: string; answer?: string; tags?: string[] }) => {
     try {
       setIsSavingPost(true);
-      // Extract id and updates from the received data
       const { id: postId, ...updates } = updatedPostData;
-
-      const response = await fetch(`/api/admin/posts`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ postId, ...updates }), // Send postId and updates separately
-      });
-
-      if (!response.ok) {
-         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to update post');
-      }
-
-      // Update the post in the local state using the original posts array and the updated data
-      setPosts(posts.map(post => post.id === postId ? { ...post, ...updates as any } : post)); // Merge updates with existing post data
-      setEditingPost(null); // Close the edit form
-      console.log(`Post ${postId} updated successfully.`);
-
+      await updatePost(postId, updates);
+      setPosts(posts.map(p => p.id === postId ? { ...p, ...updates as any } : p));
+      setEditingPost(null);
     } catch (err) {
       setPostError(err instanceof Error ? err.message : 'Failed to update post');
-       console.error('Error updating post:', err);
     } finally {
       setIsSavingPost(false);
     }
   };
 
-  const handleCancelPostEdit = () => {
-    setEditingPost(null);
-  };
+  const handleCancelPostEdit = () => setEditingPost(null);
 
   if (loading || !user || !user.isAdmin) {
     return null;
@@ -298,53 +201,53 @@ export default function AdminPanel() {
                   </tr>
                 </thead>
                 <tbody className="divide-y-4 divide-black">
-                  {users.map((user) => (
-                    editingUser?.uid === user.uid ? (
+                  {users.map((u) => (
+                    editingUser?.uid === u.uid ? (
                       <UserEditRow
-                        key={user.uid}
+                        key={u.uid}
                         user={editingUser}
                         onSave={handleSaveEdit}
                         onCancel={handleCancelEdit}
                         isSaving={isSavingUser}
                       />
                     ) : (
-                      <tr key={user.uid} className="hover:bg-gray-50">
+                      <tr key={u.uid} className="hover:bg-gray-50">
                         <td className="px-4 sm:px-6 py-3 sm:py-4">
                           <div className="flex items-center">
-                            {user.photoURL ? (
+                            {u.photoURL ? (
                               <img
-                                src={user.photoURL}
-                                alt={user.displayName || 'User'}
+                                src={u.photoURL}
+                                alt={u.displayName || 'User'}
                                 className="h-8 w-8 sm:h-10 sm:w-10 rounded-full border-2 border-black"
                               />
                             ) : (
                               <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-gray-200 border-2 border-black flex items-center justify-center">
                                 <span className="text-base sm:text-lg font-bold text-gray-600">
-                                  {(user.displayName || user.email || '?')[0].toUpperCase()}
+                                  {(u.displayName || u.email || '?')[0].toUpperCase()}
                                 </span>
                               </div>
                             )}
                             <div className="ml-3 sm:ml-4">
                               <div className="text-xs sm:text-sm font-medium text-gray-900 font-comic">
-                                {user.displayName || 'No Name'}
+                                {u.displayName || 'No Name'}
                               </div>
                               <div className="text-xs sm:text-sm text-gray-500 font-comic">
-                                {user.uid.slice(0, 8)}...
+                                {u.uid.slice(0, 8)}...
                               </div>
                             </div>
                           </div>
                         </td>
                         <td className="px-4 sm:px-6 py-3 sm:py-4">
-                          <div className="text-xs sm:text-sm text-gray-900 font-comic">{user.email || 'No Email'}</div>
+                          <div className="text-xs sm:text-sm text-gray-900 font-comic">{u.email || 'No Email'}</div>
                         </td>
                         <td className="px-4 sm:px-6 py-3 sm:py-4">
                           <div className="flex items-center space-x-2">
-                            {user.emailVerified && (
+                            {u.emailVerified && (
                               <span className="px-2 py-1 text-xs font-bold text-green-800 bg-green-100 rounded-full border-2 border-green-800">
                                 Verified
                               </span>
                             )}
-                            {user.disabled && (
+                            {u.disabled && (
                               <span className="px-2 py-1 text-xs font-bold text-red-800 bg-red-100 rounded-full border-2 border-red-800">
                                 Disabled
                               </span>
@@ -355,13 +258,13 @@ export default function AdminPanel() {
                           <div className="flex space-x-2">
                             <button
                               className="px-2 sm:px-3 py-1 text-xs sm:text-sm font-bold text-white bg-blue-600 rounded-lg border-2 border-black hover:bg-blue-700 transition-colors"
-                              onClick={() => handleEditClick(user)}
+                              onClick={() => handleEditClick(u)}
                             >
                               Edit
                             </button>
                             <button
                               className="px-2 sm:px-3 py-1 text-xs sm:text-sm font-bold text-white bg-red-600 rounded-lg border-2 border-black hover:bg-red-700 transition-colors"
-                              onClick={() => handleDeleteUser(user.uid)}
+                              onClick={() => handleDeleteUser(u.uid)}
                             >
                               Delete
                             </button>
@@ -455,4 +358,4 @@ export default function AdminPanel() {
       </div>
     </div>
   );
-} 
+}

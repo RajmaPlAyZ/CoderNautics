@@ -1,12 +1,12 @@
 "use client"
 
 import { useAuth } from "@/components/AuthProvider"
+import CodeEditor from "@/components/CodeEditor"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Comment, addComment, getComments } from "@/lib/comments"
 import { deletePost, getSavedPosts, getVoteForPost, isPostSaved, recordVote, removeVote, savePost, unsavePost, updatePost, updatePostStatus, updateVote } from "@/lib/posts"
-import MonacoEditor from '@monaco-editor/react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Bookmark, BookmarkCheck, ChevronDown, ChevronUp, Compass, Copy, MinusCircle, Ship, Star } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
@@ -631,7 +631,7 @@ export default function QuestionCard({
                     transition={{ duration: 0.2 }}
                     className="relative rounded-md bg-gray-900 p-4 will-change-transform translate-z-0"
                   >
-                    <MonacoEditor
+                    <CodeEditor
                       height="200px"
                       defaultLanguage="python"
                       value={code}

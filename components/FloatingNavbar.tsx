@@ -18,7 +18,7 @@ const firestore = getFirestore(app);
 
 export default function FloatingNavbar() {
   const { user, logout } = useAuth();
-  const isAdmin = user?.email === 'admin@example.com';
+  const isAdmin = user?.isAdmin || false;
   const pathname = usePathname();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);

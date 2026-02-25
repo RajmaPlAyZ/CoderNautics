@@ -112,8 +112,10 @@ export async function getPostsByUserId(userId: string): Promise<Post[]> {
 
 export async function addPost(postData: { title: string; code?: string; answer?: string; tags?: string[] }, authorId: string): Promise<Post> {
   const postsRef = collection(firestore, 'questions');
-  const newPostData = {
-    ...postData,
+  
+  // Build the data object, only including defined fields
+  const newPostData: any = {
+    title: postData.title,
     authorId,
     date: new Date(),
     votes: 0,
@@ -121,6 +123,17 @@ export async function addPost(postData: { title: string; code?: string; answer?:
     active: true,
     type: 'post',
   };
+
+  // Only add optional fields if they have values
+  if (postData.code !== undefined && postData.code !== '') {
+    newPostData.code = postData.code;
+  }
+  if (postData.answer !== undefined && postData.answer !== '') {
+    newPostData.answer = postData.answer;
+  }
+  if (postData.tags !== undefined && postData.tags.length > 0) {
+    newPostData.tags = postData.tags;
+  }
 
   const docRef = await addDoc(postsRef, newPostData);
   await updateUserScore(authorId, 10);
@@ -134,10 +147,11 @@ export async function addPost(postData: { title: string; code?: string; answer?:
 
 export async function addDoubt(doubtData: { title: string; description: string; tags?: string[] }, authorId: string): Promise<Post> {
   const doubtsRef = collection(firestore, 'questions'); // Store doubts in the same collection for simplicity
-  const newDoubtData = {
+  
+  // Build the data object, only including defined fields
+  const newDoubtData: any = {
     title: doubtData.title,
     answer: doubtData.description, // Use 'answer' field for description/initial question
-    tags: doubtData.tags,
     authorId,
     date: new Date(),
     votes: 0,
@@ -145,6 +159,11 @@ export async function addDoubt(doubtData: { title: string; description: string; 
     active: true, // Doubts are active by default
     type: 'doubt', // Explicitly set type for doubts
   };
+
+  // Only add tags if they have values
+  if (doubtData.tags !== undefined && doubtData.tags.length > 0) {
+    newDoubtData.tags = doubtData.tags;
+  }
 
   const docRef = await addDoc(doubtsRef, newDoubtData);
   await updateUserScore(authorId, 10);
@@ -355,7 +374,15 @@ export async function deletePost(postId: string): Promise<void> {
 // Function to update a post
 export async function updatePost(postId: string, updatedData: { title?: string; code?: string; answer?: string; tags?: string[] }): Promise<void> {
   const postRef = doc(firestore, 'questions', postId);
-  await updateDoc(postRef, updatedData);
+  
+  // Filter out undefined values
+  const cleanedData: any = {};
+  if (updatedData.title !== undefined) cleanedData.title = updatedData.title;
+  if (updatedData.code !== undefined) cleanedData.code = updatedData.code;
+  if (updatedData.answer !== undefined) cleanedData.answer = updatedData.answer;
+  if (updatedData.tags !== undefined) cleanedData.tags = updatedData.tags;
+  
+  await updateDoc(postRef, cleanedData);
 }
 
 export async function updatePostStatus(postId: string, active: boolean): Promise<void> {

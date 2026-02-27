@@ -1,111 +1,105 @@
 "use client";
+export const dynamic = "force-dynamic";
 
 import PostEditRow from '@/components/admin/post-edit-row';
 import UserEditRow from '@/components/admin/user-edit-row';
 import { useAuth } from '@/components/AuthProvider';
-import { getAllPosts, deletePost, updatePost, Post } from '@/lib/posts';
-import { getAllUsers, deleteUser, updateUser, AdminUser } from '@/lib/adminUsers';
 import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useQuery, useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 
 export default function AdminPanel() {
-  const { user, loading } = useAuth();
+  const { dbUser, loading } = useAuth();
   const router = useRouter();
-  const [users, setUsers] = useState<AdminUser[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
+
+  const users = useQuery(api.users.getAllUsers);
+  const posts = useQuery(api.posts.getAll);
+
+  const updateUserRole = useMutation(api.users.updateUserRole);
+  const deleteUserMutation = useMutation(api.users.deleteUser);
+  const deletePostMutation = useMutation(api.posts.deletePost);
+  const updatePostMutation = useMutation(api.posts.updatePost);
+
+  const [editingUser, setEditingUser] = useState<any | null>(null);
   const [isSavingUser, setIsSavingUser] = useState(false);
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loadingPosts, setLoadingPosts] = useState(true);
-  const [postError, setPostError] = useState<string | null>(null);
-  const [editingPost, setEditingPost] = useState<Post | null>(null);
+  const [editingPost, setEditingPost] = useState<any | null>(null);
   const [isSavingPost, setIsSavingPost] = useState(false);
 
   useEffect(() => {
-    if (!loading && (!user || !user.isAdmin)) {
+    if (!loading && (!dbUser || !dbUser.isAdmin)) {
       router.push('/');
     }
-  }, [user, loading, router]);
+  }, [dbUser, loading, router]);
 
-  useEffect(() => {
-    if (!user?.isAdmin) return;
 
-    const fetchUsers = async () => {
+  const handleEditUser = (userToEdit: any) => {
+    setEditingUser(userToEdit);
+  };
+
+  const handleDeleteUser = async (userId: Id<"users">) => {
+    if (confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
       try {
-        const fetchedUsers = await getAllUsers();
-        setUsers(fetchedUsers);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch users');
-      } finally {
-        setLoadingUsers(false);
+        await deleteUserMutation({ targetUserId: userId });
+      } catch (err: any) {
+        alert(err.message || 'Failed to delete user');
       }
-    };
-
-    const fetchPosts = async () => {
-      try {
-        const fetchedPosts = await getAllPosts();
-        setPosts(fetchedPosts);
-      } catch (err) {
-        setPostError(err instanceof Error ? err.message : 'Failed to fetch posts');
-      } finally {
-        setLoadingPosts(false);
-      }
-    };
-
-    fetchUsers();
-    fetchPosts();
-  }, [user]);
-
-  const handleDeleteUser = async (uid: string) => {
-    if (!confirm('Are you sure you want to delete this user?')) return;
-    try {
-      await deleteUser(uid);
-      setUsers(users.filter(u => u.uid !== uid));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete user');
     }
   };
 
-  const handleEditClick = (u: AdminUser) => setEditingUser(u);
-
-  const handleSaveEdit = async (updatedUser: AdminUser) => {
+  const handleSaveEdit = async (updatedData: any) => {
+    if (!editingUser) return;
+    setIsSavingUser(true);
     try {
-      setIsSavingUser(true);
-      await updateUser(updatedUser);
-      setUsers(users.map(u => u.uid === updatedUser.uid ? updatedUser : u));
+      if (updatedData.disabled !== undefined) {
+        // We aren't fully supporting "disabled" in Convex Auth out of the box right now
+        // But we could add it to schema if needed. Let's ignore disabled for now
+      }
+      if (updatedData.isAdmin !== undefined) {
+        await updateUserRole({ targetUserId: editingUser.id, isAdmin: updatedData.isAdmin });
+      }
       setEditingUser(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update user');
+    } catch (err: any) {
+      alert(err.message || 'Failed to update user');
     } finally {
       setIsSavingUser(false);
     }
   };
 
-  const handleCancelEdit = () => setEditingUser(null);
+  const handleCancelEdit = () => {
+    setEditingUser(null);
+  };
 
-  const handleDeletePost = async (postId: string) => {
-    if (!confirm('Are you sure you want to delete this post?')) return;
-    try {
-      await deletePost(postId);
-      setPosts(posts.filter(p => p.id !== postId));
-    } catch (err) {
-      setPostError(err instanceof Error ? err.message : 'Failed to delete post');
+  // Post Actions
+  const handleEditPost = (postToEdit: any) => {
+    setEditingPost(postToEdit);
+  };
+
+  const handleDeletePost = async (postId: Id<"questions">) => {
+    if (confirm('Are you sure you want to delete this post? This action cannot be undone.')) {
+      try {
+        await deletePostMutation({ id: postId });
+      } catch (err: any) {
+        alert(err.message || 'Failed to delete post');
+      }
     }
   };
 
-  const handleEditPostClick = (post: Post) => setEditingPost(post);
-
-  const handleSavePostEdit = async (updatedPostData: { id: string; title?: string; code?: string; answer?: string; tags?: string[] }) => {
+  const handleSavePostEdit = async (updatedData: any) => {
+    if (!editingPost) return;
+    setIsSavingPost(true);
     try {
-      setIsSavingPost(true);
-      const { id: postId, ...updates } = updatedPostData;
-      await updatePost(postId, updates);
-      setPosts(posts.map(p => p.id === postId ? { ...p, ...updates as any } : p));
+      await updatePostMutation({
+        id: editingPost.id,
+        title: updatedData.title,
+        code: updatedData.code,
+        tags: updatedData.tags
+      });
       setEditingPost(null);
-    } catch (err) {
-      setPostError(err instanceof Error ? err.message : 'Failed to update post');
+    } catch (err: any) {
+      alert(err.message || 'Failed to update post');
     } finally {
       setIsSavingPost(false);
     }
@@ -113,7 +107,7 @@ export default function AdminPanel() {
 
   const handleCancelPostEdit = () => setEditingPost(null);
 
-  if (loading || !user || !user.isAdmin) {
+  if (loading || !dbUser || !dbUser.isAdmin) {
     return null;
   }
 
@@ -141,7 +135,7 @@ export default function AdminPanel() {
             className="bg-white p-4 sm:p-6 rounded-xl border-4 border-black shadow-[0_6px_0_#222]"
           >
             <h3 className="text-base sm:text-lg font-bold text-gray-900 font-comic mb-2">Total Users</h3>
-            <p className="text-2xl sm:text-3xl font-bold text-blue-600">{users.length}</p>
+            <p className="text-2xl sm:text-3xl font-bold text-blue-600">{users?.length || 0}</p>
           </motion.div>
 
           <motion.div
@@ -152,7 +146,7 @@ export default function AdminPanel() {
           >
             <h3 className="text-base sm:text-lg font-bold text-gray-900 font-comic mb-2">Verified Users</h3>
             <p className="text-2xl sm:text-3xl font-bold text-green-600">
-              {users.filter(u => u.emailVerified).length}
+              {users?.filter(u => u.emailVerified).length || 0}
             </p>
           </motion.div>
 
@@ -164,7 +158,7 @@ export default function AdminPanel() {
           >
             <h3 className="text-base sm:text-lg font-bold text-gray-900 font-comic mb-2">Disabled Users</h3>
             <p className="text-2xl sm:text-3xl font-bold text-red-600">
-              {users.filter(u => u.disabled).length}
+              {users?.filter(u => u.disabled).length || 0}
             </p>
           </motion.div>
         </div>
@@ -180,14 +174,10 @@ export default function AdminPanel() {
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900 font-comic">User Management</h2>
           </div>
 
-          {loadingUsers ? (
+          {users === undefined ? (
             <div className="p-6 sm:p-8 text-center">
               <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-4 border-black border-t-transparent mx-auto"></div>
               <p className="mt-4 text-sm sm:text-base text-gray-600 font-comic">Loading users...</p>
-            </div>
-          ) : error ? (
-            <div className="p-6 sm:p-8 text-center">
-              <p className="text-sm sm:text-base text-red-600 font-comic">{error}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -202,37 +192,37 @@ export default function AdminPanel() {
                 </thead>
                 <tbody className="divide-y-4 divide-black">
                   {users.map((u) => (
-                    editingUser?.uid === u.uid ? (
+                    editingUser?.id === u.id ? (
                       <UserEditRow
-                        key={u.uid}
-                        user={editingUser}
+                        key={u.id}
+                        user={{ ...u, uid: u.id, photoURL: u.avatar_url, displayName: u.name } as any}
                         onSave={handleSaveEdit}
                         onCancel={handleCancelEdit}
                         isSaving={isSavingUser}
                       />
                     ) : (
-                      <tr key={u.uid} className="hover:bg-gray-50">
+                      <tr key={u.id} className="hover:bg-gray-50">
                         <td className="px-4 sm:px-6 py-3 sm:py-4">
                           <div className="flex items-center">
-                            {u.photoURL ? (
+                            {u.avatar_url ? (
                               <img
-                                src={u.photoURL}
-                                alt={u.displayName || 'User'}
+                                src={u.avatar_url}
+                                alt={u.username || 'User'}
                                 className="h-8 w-8 sm:h-10 sm:w-10 rounded-full border-2 border-black"
                               />
                             ) : (
                               <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-gray-200 border-2 border-black flex items-center justify-center">
                                 <span className="text-base sm:text-lg font-bold text-gray-600">
-                                  {(u.displayName || u.email || '?')[0].toUpperCase()}
+                                  {(u.username || u.name || u.email || '?')[0].toUpperCase()}
                                 </span>
                               </div>
                             )}
                             <div className="ml-3 sm:ml-4">
                               <div className="text-xs sm:text-sm font-medium text-gray-900 font-comic">
-                                {u.displayName || 'No Name'}
+                                {u.username || u.name || 'No Name'}
                               </div>
                               <div className="text-xs sm:text-sm text-gray-500 font-comic">
-                                {u.uid.slice(0, 8)}...
+                                {u.id.slice(0, 8)}...
                               </div>
                             </div>
                           </div>
@@ -252,19 +242,24 @@ export default function AdminPanel() {
                                 Disabled
                               </span>
                             )}
+                            {u.isAdmin && (
+                              <span className="px-2 py-1 text-xs font-bold text-purple-800 bg-purple-100 rounded-full border-2 border-purple-800">
+                                Admin
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="px-4 sm:px-6 py-3 sm:py-4">
-                          <div className="flex space-x-2">
+                          <div className="flex space-x-2 sm:space-x-3 text-xs sm:text-sm">
                             <button
-                              className="px-2 sm:px-3 py-1 text-xs sm:text-sm font-bold text-white bg-blue-600 rounded-lg border-2 border-black hover:bg-blue-700 transition-colors"
-                              onClick={() => handleEditClick(u)}
+                              onClick={() => handleEditUser(u)}
+                              className="text-blue-600 hover:text-blue-900 font-bold font-comic uppercase tracking-wider hover:underline"
                             >
                               Edit
                             </button>
                             <button
-                              className="px-2 sm:px-3 py-1 text-xs sm:text-sm font-bold text-white bg-red-600 rounded-lg border-2 border-black hover:bg-red-700 transition-colors"
-                              onClick={() => handleDeleteUser(u.uid)}
+                              onClick={() => handleDeleteUser(u.id)}
+                              className="text-red-600 hover:text-red-900 font-bold font-comic uppercase tracking-wider hover:underline"
                             >
                               Delete
                             </button>
@@ -283,30 +278,29 @@ export default function AdminPanel() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
+          transition={{ delay: 0.4 }}
           className="bg-white rounded-xl border-4 border-black shadow-[0_6px_0_#222] overflow-hidden"
         >
-          <div className="p-4 sm:p-6 border-b-4 border-black">
+          <div className="p-4 sm:p-6 border-b-4 border-black flex justify-between items-center">
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900 font-comic">Post Management</h2>
+            <div className="text-sm font-bold py-1 px-3 bg-blue-100 text-blue-800 rounded-full border-2 border-blue-800">
+              Total: {posts?.length || 0}
+            </div>
           </div>
 
-          {loadingPosts ? (
+          {posts === undefined ? (
             <div className="p-6 sm:p-8 text-center">
               <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-4 border-black border-t-transparent mx-auto"></div>
               <p className="mt-4 text-sm sm:text-base text-gray-600 font-comic">Loading posts...</p>
-            </div>
-          ) : postError ? (
-            <div className="p-6 sm:p-8 text-center">
-              <p className="text-sm sm:text-base text-red-600 font-comic">{postError}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="bg-gray-50 border-b-4 border-black">
-                    <th className="px-4 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-bold text-gray-900 font-comic">Title</th>
+                    <th className="px-4 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-bold text-gray-900 font-comic">Post details</th>
                     <th className="px-4 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-bold text-gray-900 font-comic">Author</th>
-                    <th className="px-4 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-bold text-gray-900 font-comic">Date</th>
+                    <th className="px-4 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-bold text-gray-900 font-comic">Stats</th>
                     <th className="px-4 sm:px-6 py-3 sm:py-4 text-left text-xs sm:text-sm font-bold text-gray-900 font-comic">Actions</th>
                   </tr>
                 </thead>
@@ -322,26 +316,55 @@ export default function AdminPanel() {
                       />
                     ) : (
                       <tr key={post.id} className="hover:bg-gray-50">
-                        <td className="px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium text-gray-900 font-comic">
-                          {post.title}
-                        </td>
-                        <td className="px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-gray-900 font-comic">
-                          {post.user?.username || 'Anonymous'}
-                        </td>
-                        <td className="px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-gray-500 font-comic">
-                          {new Date(post.date).toLocaleDateString()}
+                        <td className="px-4 sm:px-6 py-3 sm:py-4">
+                          <div className="text-xs sm:text-sm font-bold text-gray-900 font-comic mb-1">
+                            {post.title}
+                          </div>
+                          <div className="text-xs text-gray-500 font-comic">
+                            {post.tags?.join(', ') || 'No tags'}
+                          </div>
                         </td>
                         <td className="px-4 sm:px-6 py-3 sm:py-4">
-                          <div className="flex space-x-2">
+                          <div className="flex items-center">
+                            {post.user?.avatar_url ? (
+                              <img
+                                src={post.user.avatar_url}
+                                alt={post.user?.username || 'Author'}
+                                className="h-6 w-6 sm:h-8 sm:w-8 rounded-full border-2 border-black mr-2 sm:mr-3"
+                              />
+                            ) : (
+                              <div className="h-6 w-6 sm:h-8 sm:w-8 rounded-full bg-gray-200 border-2 border-black flex items-center justify-center mr-2 sm:mr-3">
+                                <span className="text-xs font-bold text-gray-600">
+                                  {(post.user?.username || '?')[0].toUpperCase()}
+                                </span>
+                              </div>
+                            )}
+                            <div className="text-xs sm:text-sm font-medium text-gray-900 font-comic">
+                              {post.user?.username || 'Unknown'}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 sm:px-6 py-3 sm:py-4">
+                          <div className="flex items-center space-x-2 sm:space-x-4 text-xs sm:text-sm text-gray-500 font-comic">
+                            <span className="flex items-center" title="Upvotes">
+                              <span className="text-green-600 mr-1">↑</span> {post.votes}
+                            </span>
+                            <span className="flex items-center" title="Downvotes">
+                              <span className="text-red-600 mr-1">↓</span> {post.downvotes}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 sm:px-6 py-3 sm:py-4">
+                          <div className="flex space-x-2 sm:space-x-3 text-xs sm:text-sm">
                             <button
-                              className="px-2 sm:px-3 py-1 text-xs sm:text-sm font-bold text-white bg-blue-600 rounded-lg border-2 border-black hover:bg-blue-700 transition-colors"
-                              onClick={() => handleEditPostClick(post)}
+                              onClick={() => handleEditPost(post)}
+                              className="text-blue-600 hover:text-blue-900 font-bold font-comic uppercase tracking-wider hover:underline"
                             >
                               Edit
                             </button>
                             <button
-                              className="px-2 sm:px-3 py-1 text-xs sm:text-sm font-bold text-white bg-red-600 rounded-lg border-2 border-black hover:bg-red-700 transition-colors"
-                              onClick={() => handleDeletePost(post.id)}
+                              onClick={() => handleDeletePost(post.id as any)}
+                              className="text-red-600 hover:text-red-900 font-bold font-comic uppercase tracking-wider hover:underline"
                             >
                               Delete
                             </button>

@@ -4,63 +4,53 @@ import { useAuth } from "@/components/AuthProvider"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { addComment, Comment, getComments } from "@/lib/comments"
-import { getPostById, isPostSaved, Post, savePost, unsavePost } from "@/lib/posts"
 import { Bookmark, BookmarkCheck, ChevronDown, ChevronUp, Copy } from "lucide-react"
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
+import { useState } from "react"
+import { useQuery, useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api"
+import { Id } from "@/convex/_generated/dataModel"
 
-export default function QuestionContent({ questionId }: { questionId: string }) {
-    const { user } = useAuth()
-    const [comments, setComments] = useState<Comment[]>([])
+export default function QuestionContent() {
+    const searchParams = useSearchParams()
+    const questionIdRaw = searchParams.get('id')
+    // We expect the ID to be a valid convex Id<"questions">
+    const questionId = questionIdRaw as Id<"questions"> | null;
+
+    const { user, dbUser, loading: authLoading } = useAuth()
+
+    // Data fetching using Convex hooks
+    const post = useQuery(api.posts.getById, questionId ? { id: questionId } : "skip");
+    const comments = useQuery(api.comments.getByQuestionId, questionId ? { questionId: questionId } : "skip");
+
+    // We need a query that returns the saved post document to get its ID for unsaving
+    const savedPosts = useQuery(api.savedPosts.getSavedPosts);
+    const savedPostRecord = savedPosts?.find(sp => sp.questionId === questionId);
+    const isSaved = !!savedPostRecord;
+
+    // Mutations
+    const addCommentMutation = useMutation(api.comments.addComment);
+    const savePostMutation = useMutation(api.savedPosts.savePost);
+    const unsavePostMutation = useMutation(api.savedPosts.unsavePost);
+    // You would add vote mutations here if implemented
+    // const voteMutation = useMutation(api.posts.vote);
+
     const [newComment, setNewComment] = useState("")
     const [isSubmitting, setIsSubmitting] = useState(false)
-    const [isSaved, setIsSaved] = useState(false)
-    const [savedPostId, setSavedPostId] = useState<string | null>(null)
     const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
-    const [post, setPost] = useState<Post | null>(null)
-    const [loadingPost, setLoadingPost] = useState(true)
 
-    useEffect(() => {
-        loadComments()
-        if (user) {
-            checkIfSaved()
-        }
-        loadPost()
-    }, [questionId, user])
-
-    const loadComments = async () => {
-        try {
-            const fetchedComments = await getComments(questionId)
-            setComments(fetchedComments)
-        } catch (error) {
-            console.error("Error loading comments:", error)
-        }
-    }
-
-    const checkIfSaved = async () => {
-        if (!user) return
-        try {
-            const saved = await isPostSaved(user.uid, questionId)
-            setIsSaved(saved)
-        } catch (error) {
-            console.error("Error checking if post is saved:", error)
-        }
+    if (!questionId) {
+        return <div className="min-h-screen container mx-auto p-8"><p>Invalid question ID</p></div>
     }
 
     const handleSavePost = async () => {
-        if (!user) return
+        if (!user || !dbUser?.id || !questionId) return
         try {
-            if (isSaved) {
-                if (savedPostId) {
-                    await unsavePost(savedPostId)
-                    setIsSaved(false)
-                    setSavedPostId(null)
-                }
-            } else {
-                const savedPost = await savePost(user.uid, questionId)
-                setIsSaved(true)
-                setSavedPostId(savedPost.id)
+            if (isSaved && savedPostRecord) {
+                await unsavePostMutation({ savedPostId: savedPostRecord._id as Id<"savedPosts"> });
+            } else if (!isSaved) {
+                await savePostMutation({ questionId });
             }
         } catch (error) {
             console.error("Error saving/unsaving post:", error)
@@ -68,41 +58,27 @@ export default function QuestionContent({ questionId }: { questionId: string }) 
     }
 
     const getAuthorName = () => {
+        if (dbUser?.username) return dbUser.username;
+        if (dbUser?.name) return dbUser.name;
         if (user?.displayName) return user.displayName;
-        if (user?.username) return user.username;
-        if (user?.uid) return user.uid.slice(0, 8);
+        if (user?.email) return user.email.split('@')[0];
         return 'Anonymous';
     }
 
     const handleSubmitComment = async () => {
-        if (!user || !newComment.trim()) return
+        if (!user || !dbUser?.id || !newComment.trim() || !questionId) return
         setIsSubmitting(true)
         try {
-            const comment = await addComment(
-                questionId,
-                newComment.trim(),
-                user.uid,
-                getAuthorName()
-            )
-            setComments([comment, ...comments])
+            await addCommentMutation({
+                questionId: questionId,
+                text: newComment.trim(),
+                authorName: getAuthorName()
+            })
             setNewComment("")
         } catch (error) {
             console.error("Error adding comment:", error)
         } finally {
             setIsSubmitting(false)
-        }
-    }
-
-    const loadPost = async () => {
-        try {
-            setLoadingPost(true);
-            const fetchedPost = await getPostById(questionId);
-            setPost(fetchedPost);
-        } catch (error) {
-            console.error("Error loading post:", error);
-            setPost(null);
-        } finally {
-            setLoadingPost(false);
         }
     }
 
@@ -172,7 +148,7 @@ export default function QuestionContent({ questionId }: { questionId: string }) 
                                         </Badge>
                                     ))}
                                 </div>
-                                <div className="text-sm text-gray-500">Added on {post?.date ? new Date(post.date).toLocaleDateString() : 'N/A'}</div>
+                                <div className="text-sm text-gray-500">Added on {post?._creationTime ? new Date(post._creationTime).toLocaleDateString() : 'N/A'}</div>
                             </div>
                         </div>
                     </div>
@@ -209,13 +185,13 @@ export default function QuestionContent({ questionId }: { questionId: string }) 
                     <div className="border-t px-6 py-4">
                         <h2 className="mb-2 font-medium">Comments</h2>
                         <div className="max-h-[200px] overflow-y-auto pr-2">
-                            {comments.length > 0 ? (
+                            {comments && comments.length > 0 ? (
                                 <div className="space-y-2">
-                                    {comments.map((comment) => (
-                                        <div key={comment.id} className="rounded-md border p-2">
+                                    {comments.map((comment: any) => (
+                                        <div key={comment._id} className="rounded-md border p-2">
                                             <p className="text-sm text-gray-700">{comment.text}</p>
                                             <div className="mt-1 text-xs text-gray-500">
-                                                Posted by {comment.authorName} on {comment.createdAt.toLocaleDateString()}
+                                                Posted by {comment.authorName} on {new Date(comment._creationTime).toLocaleDateString()}
                                             </div>
                                         </div>
                                     ))}

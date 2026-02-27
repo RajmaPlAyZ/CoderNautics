@@ -1,44 +1,23 @@
 "use client";
-import { app } from '@/lib/firebaseClient';
-import { doc, getFirestore, onSnapshot } from "firebase/firestore";
 import { Home, Menu, Shield, Trophy, User, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAuth } from './AuthProvider';
+import { useQuery } from "convex/react";
+import { api } from "../convex/_generated/api";
 
-const navLinks = [
+const navLinks: { label: string; href: string; icon: any; auth?: boolean; admin?: boolean }[] = [
   { label: 'Home', href: '/', icon: Home },
   { label: 'Profile', href: '/profile', icon: User, auth: true },
-  { label: 'Admin', href: '/admin', icon: Shield, admin: true },
   { label: 'Leaderboard', href: '/leaderboard', icon: Trophy },
 ];
 
-const firestore = getFirestore(app);
-
 export default function FloatingNavbar() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const isAdmin = user?.isAdmin || false;
   const pathname = usePathname();
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-
-  useEffect(() => {
-    let unsubscribe: () => void;
-    if (user) {
-      const profileRef = doc(firestore, "profiles", user.uid);
-      unsubscribe = onSnapshot(profileRef, (docSnap) => {
-        if (docSnap.exists()) {
-          setAvatarUrl(docSnap.data()?.avatar_url || null);
-        } else {
-          setAvatarUrl(null);
-        }
-      });
-    } else {
-      setAvatarUrl(null);
-    }
-    return () => { if (unsubscribe) unsubscribe(); };
-  }, [user]);
 
   return (
     <>
@@ -47,17 +26,15 @@ export default function FloatingNavbar() {
         <Link href="/" className="flex items-center gap-2 select-none">
           <span className="text-lg md:text-2xl font-extrabold tracking-tight font-comic text-black flex items-center gap-2">
             {/* Astronaut Logo */}
-            <img 
-              src="/logo.png" 
-              alt="CoderNautics Logo" 
+            <img
+              src="/logo.png"
+              alt="CoderNautics Logo"
               className="h-6 w-6 sm:h-8 sm:w-8 md:h-10 md:w-10 flex-shrink-0"
               onError={(e) => {
-                // Fallback to text if image fails to load
                 e.currentTarget.style.display = 'none';
                 e.currentTarget.nextElementSibling?.classList.remove('hidden');
               }}
             />
-            {/* Fallback text logo */}
             <div className="hidden h-6 w-6 sm:h-8 sm:w-8 md:h-10 md:w-10 items-center justify-center bg-gradient-to-br from-blue-500 to-red-500 rounded-lg text-white font-bold text-sm sm:text-base md:text-lg shadow-sm">
               ⚡
             </div>
@@ -76,11 +53,10 @@ export default function FloatingNavbar() {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`flex items-center gap-1 px-2 md:px-4 py-2 rounded-lg font-semibold transition-all duration-150 text-gray-700 ${
-                  isActive
-                    ? 'bg-blue-200 text-blue-800 shadow-sm'
-                    : 'hover:bg-gray-100 hover:text-gray-900'
-                }`}
+                className={`flex items-center gap-1 px-2 md:px-4 py-2 rounded-lg font-semibold transition-all duration-150 text-gray-700 ${isActive
+                  ? 'bg-blue-200 text-blue-800 shadow-sm'
+                  : 'hover:bg-gray-100 hover:text-gray-900'
+                  }`}
               >
                 <Icon className={`w-4 h-4 md:w-5 md:h-5 ${isActive ? 'text-blue-700' : 'text-gray-500 group-hover:text-gray-700'}`} />
                 <span className="text-sm md:text-base">{link.label}</span>
@@ -105,10 +81,10 @@ export default function FloatingNavbar() {
         {user && (
           <div className="hidden md:flex items-center gap-1">
             <Link href="/profile" className="flex items-center justify-center w-8 h-8 md:w-10 md:h-10 rounded-full bg-blue-500 text-white font-extrabold text-sm md:text-xl shadow-sm cursor-pointer overflow-hidden">
-              {avatarUrl ? (
-                <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+              {user.avatar_url ? (
+                <img src={user.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
               ) : (
-                user.email?.[0]?.toUpperCase()
+                user.name?.[0]?.toUpperCase() || user.username?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || '?'
               )}
             </Link>
             {user.username && (
@@ -134,11 +110,10 @@ export default function FloatingNavbar() {
                   key={link.href}
                   href={link.href}
                   onClick={() => setIsMobileMenuOpen(false)}
-                  className={`flex items-center gap-2 px-4 py-3 rounded-lg font-semibold transition-all duration-150 text-gray-700 ${
-                    isActive
-                      ? 'bg-blue-200 text-blue-800 shadow-sm'
-                      : 'hover:bg-gray-100 hover:text-gray-900'
-                  }`}
+                  className={`flex items-center gap-2 px-4 py-3 rounded-lg font-semibold transition-all duration-150 text-gray-700 ${isActive
+                    ? 'bg-blue-200 text-blue-800 shadow-sm'
+                    : 'hover:bg-gray-100 hover:text-gray-900'
+                    }`}
                 >
                   <Icon className={`w-5 h-5 ${isActive ? 'text-blue-700' : 'text-gray-500'}`} />
                   <span>{link.label}</span>
@@ -148,10 +123,10 @@ export default function FloatingNavbar() {
             {user && (
               <div className="flex items-center gap-2 px-4 py-3 mt-2 border-t-2 border-gray-100">
                 <Link href="/profile" className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-500 text-white font-extrabold text-sm shadow-sm cursor-pointer overflow-hidden">
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                  {user.avatar_url ? (
+                    <img src={user.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
                   ) : (
-                    user.email?.[0]?.toUpperCase()
+                    user.name?.[0]?.toUpperCase() || user.username?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || '?'
                   )}
                 </Link>
                 {user.username && (
@@ -166,4 +141,4 @@ export default function FloatingNavbar() {
       )}
     </>
   );
-} 
+}

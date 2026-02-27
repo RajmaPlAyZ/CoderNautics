@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -12,12 +12,13 @@
     "tauri:build": "tauri build"
   },
   "dependencies": {
+    "@auth/core": "^0.37.4",
+    "@convex-dev/auth": "^0.0.91",
     "@monaco-editor/react": "^4.7.0",
     "@radix-ui/react-slot": "^1.2.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "firebase": "^11.7.3",
-    "firebase-admin": "^13.4.0",
+    "convex": "^1.32.0",
     "framer-motion": "^12.12.1",
     "lucide-react": "^0.511.0",
     "next": "15.2.4",

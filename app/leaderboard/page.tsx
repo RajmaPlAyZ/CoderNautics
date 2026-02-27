@@ -1,54 +1,12 @@
 'use client'
 
-import { getRankBadge } from '@/components/question-card'; // Assuming getRankBadge can be imported
-import { app } from '@/lib/firebaseClient';
-import { collection, getDocs, getFirestore, orderBy, query } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
-
-interface LeaderboardUser {
-  id: string;
-  username: string;
-  avatar_url: string | null;
-  score: number;
-}
-
-const firestore = getFirestore(app);
+import { getRankBadge } from '@/components/question-card';
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 
 export default function LeaderboardPage() {
-  const [users, setUsers] = useState<LeaderboardUser[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const usersCollection = collection(firestore, 'profiles');
-        // Order by score descending. If scores are equal, maybe order by username or another field.
-        const q = query(usersCollection, orderBy('score', 'desc'));
-        const querySnapshot = await getDocs(q);
-
-        const fetchedUsers: LeaderboardUser[] = querySnapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            username: data.username || 'Anonymous', // Use a default if username is missing
-            avatar_url: data.avatar_url || null,
-            score: data.score || 0, // Default to 0 if score is missing
-          };
-        });
-        setUsers(fetchedUsers);
-      } catch (err: any) {
-        console.error('Error fetching users for leaderboard:', err);
-        setError('Failed to load leaderboard. Please try again later.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchUsers();
-  }, []);
+  const users = useQuery(api.users.getLeaderboard);
+  const loading = users === undefined;
 
   return (
     <div className="min-h-screen py-4 sm:py-8">
@@ -59,10 +17,6 @@ export default function LeaderboardPage() {
           {loading ? (
             <div className="text-center py-6 sm:py-8">
               <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-b-2 border-gray-900 mx-auto"></div>
-            </div>
-          ) : error ? (
-            <div className="text-center py-6 sm:py-8 text-red-500">
-              <p>{error}</p>
             </div>
           ) : users.length === 0 ? (
             <div className="text-center py-6 sm:py-8 text-gray-600">
@@ -95,4 +49,4 @@ export default function LeaderboardPage() {
       </div>
     </div>
   );
-} 
+}

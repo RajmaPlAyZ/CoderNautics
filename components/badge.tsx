@@ -39,5 +39,4 @@ function Badge({ className, variant, tagType, ...props }: BadgeProps) {
   return <div className={cn(badgeVariants({ variant }), colorClass, className)} {...props} />
 }
 
-export { Badge, badgeVariants } from "./ui/badge"
-
+export { Badge, badgeVariants }
